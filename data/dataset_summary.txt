@@ -1,0 +1,28 @@
+
+AWGAN Implementation - Final Dataset Summary
+============================================
+
+Training Dataset (Balanced):
+- Total samples: 70000
+- Classes: {'R2L': 14000, 'Probe': 14000, 'Benign': 14000, 'DoS': 14000, 'U2R': 14000}
+
+Test Dataset:
+- Total samples: 17336
+- Classes: {'Benign': 6000, 'DoS': 6000, 'Probe': 4181, 'R2L': 1122, 'U2R': 33}
+
+Features:
+- Total features: 41  # Excluding Label
+- Categorical: protocol_type, service, flag
+- Binary: land, logged_in, is_host_login, is_guest_login
+- Numerical: 35 features
+
+Dataset Balance:
+- Training: All classes have approximately 20,000 samples each
+- Test: Original distribution preserved (no synthetic data)
+
+Files Generated:
+- data/final_train_balanced.csv: Balanced training dataset
+- data/final_test.csv: Test dataset with original distribution
+- data/majority_train_compressed_raw.csv: Compressed majority classes
+- data/minority_train_augmented_raw.csv: Augmented minority classes
+- models/wgan_*/: Trained WGAN models for each minority class
