@@ -1,0 +1,1 @@
+DATA_FOLDER = "/dis/DS/minhtq/CIC-2018/"

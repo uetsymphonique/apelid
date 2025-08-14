@@ -81,39 +81,39 @@ class NSLKDDPreprocessor(Preprocessor):
         self.encoders['ordinal'].fit(df[self.encoded_categorical_features])
         
 
-    def load_encoders(self, models_dir="models"):
+    def load_encoders(self, encoders_dir="encoders"):
         """Load pre-trained encoders from saved files"""
         import joblib
         
         try:
             self.encoders = {
-                'categorical': joblib.load(f"{models_dir}/categorical_encoder.pkl"),
-                'numerical': joblib.load(f"{models_dir}/numerical_encoder.pkl"),
-                'label': joblib.load(f"{models_dir}/label_encoder.pkl"),
-                'ordinal': joblib.load(f"{models_dir}/ordinal_encoder.pkl")
+                'categorical': joblib.load(f"{encoders_dir}/categorical_encoder.pkl"),
+                'numerical': joblib.load(f"{encoders_dir}/numerical_encoder.pkl"),
+                'label': joblib.load(f"{encoders_dir}/label_encoder.pkl"),
+                'ordinal': joblib.load(f"{encoders_dir}/ordinal_encoder.pkl")
             }
-            logger.info(f"[+] Encoders loaded from {models_dir}")
+            logger.info(f"[+] Encoders loaded from {encoders_dir}")
             return True
         except FileNotFoundError as e:
-            logger.error(f"[-] Encoder files not found in {models_dir}: {e}")
+            logger.error(f"[-] Encoder files not found in {encoders_dir}: {e}")
             return False
         except Exception as e:
             logger.error(f"[-] Error loading encoders: {e}")
             return False
 
-    def save_encoders(self, models_dir="models"):
+    def save_encoders(self, encoders_dir="encoders"):
         """Save trained encoders to files"""
         import joblib
         import os
         
-        os.makedirs(models_dir, exist_ok=True)
+        os.makedirs(encoders_dir, exist_ok=True)
         
         try:
-            joblib.dump(self.encoders['categorical'], f"{models_dir}/categorical_encoder.pkl")
-            joblib.dump(self.encoders['numerical'], f"{models_dir}/numerical_encoder.pkl")
-            joblib.dump(self.encoders['label'], f"{models_dir}/label_encoder.pkl")
-            joblib.dump(self.encoders['ordinal'], f"{models_dir}/ordinal_encoder.pkl")
-            logger.info(f"[+] Encoders saved to {models_dir}")
+            joblib.dump(self.encoders['categorical'], f"{encoders_dir}/categorical_encoder.pkl")
+            joblib.dump(self.encoders['numerical'], f"{encoders_dir}/numerical_encoder.pkl")
+            joblib.dump(self.encoders['label'], f"{encoders_dir}/label_encoder.pkl")
+            joblib.dump(self.encoders['ordinal'], f"{encoders_dir}/ordinal_encoder.pkl")
+            logger.info(f"[+] Encoders saved to {encoders_dir}")
             return True
         except Exception as e:
             logger.error(f"[-] Error saving encoders: {e}")
