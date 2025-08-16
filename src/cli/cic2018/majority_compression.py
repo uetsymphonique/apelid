@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 from utils.logging import setup_logging, get_logger
+from configs import cic2018
 from preprocessing.cic2018_preprocessor import CIC2018Preprocessor
 from resampling.undersampling.kmeans import KMeansCompressor
 from resampling.undersampling.enn_refiner import ENNRefiner
@@ -8,9 +9,10 @@ from sklearn.model_selection import train_test_split
 
 logger = get_logger(__name__)
 
-DATA_FOLDER = "/dis/DS/minhtq/CIC-2018/"
+DATA_FOLDER = cic2018.DATA_FOLDER
 ENCODED_PATH = os.path.join(DATA_FOLDER, "CIC2018_encoded.csv")
 RAW_PATH = os.path.join(DATA_FOLDER, "CIC2018_raw_processed.csv")
+UNIFIED_CLEAN_PATH = os.path.join(DATA_FOLDER, "CIC2018_unified_clean.csv")
 
 
 def split_train_test(df, test_size=0.3, random_state=42):
@@ -44,11 +46,18 @@ def main():
     # 3) Initialize preprocessor and load encoders
     pre = CIC2018Preprocessor()
     if not pre.load_encoders():
-        logger.info("[+] Encoders not found. Fitting on raw dataset…")
-        raw_df = pd.read_csv(RAW_PATH)
-        raw_df = pre.select_features_and_label(raw_df)
-        pre.setup_encoders(raw_df)
-        pre.save_encoders()
+        logger.info("[+] Encoders not found. Fitting on unified clean dataset…")
+        if os.path.exists(UNIFIED_CLEAN_PATH):
+            clean_df = pd.read_csv(UNIFIED_CLEAN_PATH)
+            pre.setup_encoders(clean_df)  # No need for feature selection, already done
+            pre.save_encoders()
+        elif os.path.exists(RAW_PATH):
+            raw_df = pd.read_csv(RAW_PATH)
+            raw_df = pre.select_features_and_label(raw_df)
+            pre.setup_encoders(raw_df)
+            pre.save_encoders()
+        else:
+            raise FileNotFoundError("No suitable dataset found for encoder fitting")
 
     # 4) Encode label already numeric; ensure type
     encoded_df['Label'] = encoded_df['Label'].astype(int)
@@ -56,11 +65,14 @@ def main():
     # 5) Filter to majority classes (by original string names → convert to encoded ids)
     label_ids = pre.encoders['label'].transform(majority_labels)
     maj_df = encoded_df[encoded_df['Label'].isin(label_ids)].copy()
-    # Global de-duplication on encoded majority to reduce identical rows early
+    # Note: Since we're using unified clean dataset, minimal duplicates expected
+    # Only check for any encoding-induced duplicates
     before = len(maj_df)
     maj_df = maj_df.drop_duplicates()
     if len(maj_df) != before:
-        logger.info(f"[+] Majority encoded: dropped {before - len(maj_df)} duplicate rows (all classes)")
+        logger.info(f"[+] Found {before - len(maj_df)} encoding-induced duplicates (removed)")
+    else:
+        logger.info(f"[+] No duplicates found in majority subset (as expected from unified clean data)")
     logger.info(f"[+] Majority subset: {maj_df.shape}")
 
     # 6) Compress each majority class to tau with KMeans, then ENN refine to exact tau
@@ -91,7 +103,7 @@ def main():
     test_df.to_csv(enc_test_path, index=False)
     logger.info(f"[+] Saved encoded: {enc_train_path}, {enc_test_path}")
 
-    # 9) Inverse to raw and save
+    # 9) Inverse to raw and save (using inverse transform for compatibility with downstream)
     raw_train = pre.inverse_transform(train_df)
     raw_test = pre.inverse_transform(test_df)
     raw_train_path = os.path.join(DATA_FOLDER, 'cic_majority_train_compressed_raw.csv')
@@ -99,6 +111,7 @@ def main():
     raw_train.to_csv(raw_train_path, index=False)
     raw_test.to_csv(raw_test_path, index=False)
     logger.info(f"[+] Saved raw: {raw_train_path}, {raw_test_path}")
+    logger.info(f"[+] Note: For original clean data, use {UNIFIED_CLEAN_PATH}")
 
     logger.info("[+] CIC majority compression completed")
 
