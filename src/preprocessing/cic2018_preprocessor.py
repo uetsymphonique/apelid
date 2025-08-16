@@ -1,5 +1,7 @@
 from preprocessing.preprocessor import Preprocessor
 import pandas as pd
+import numpy as np
+import os
 from utils.logging import get_logger, setup_logging
 from sklearn.preprocessing import OneHotEncoder, MinMaxScaler, OrdinalEncoder
 from sklearn.preprocessing import LabelEncoder
@@ -146,7 +148,7 @@ class CIC2018Preprocessor(Preprocessor):
         
         # Replace infinity with NaN for numerical features
         if self.encoded_numerical_features and all(col in df_clean.columns for col in self.encoded_numerical_features):
-            import numpy as np
+            
             df_clean[self.encoded_numerical_features] = df_clean[self.encoded_numerical_features].replace([np.inf, -np.inf], np.nan)
             # Drop rows with NaN in numerical features
             before_count = len(df_clean)
@@ -161,7 +163,6 @@ class CIC2018Preprocessor(Preprocessor):
 
         # Prepare OrdinalEncoder with categories (Protocol from data, Dst Port full range)
         if self.encoded_categorical_features_ordinal and all(col in df_clean.columns for col in self.encoded_categorical_features_ordinal):
-            import numpy as np
             categories = []
             for col in self.encoded_categorical_features_ordinal:
                 if col == 'Dst Port':
@@ -203,7 +204,6 @@ class CIC2018Preprocessor(Preprocessor):
 
     def save_encoders(self, encoders_dir="encoders"):
         """Save trained encoders to files"""
-        import os
         
         os.makedirs(encoders_dir, exist_ok=True)
         
@@ -243,7 +243,6 @@ class CIC2018Preprocessor(Preprocessor):
             return df
             
         # Handle infinity values before scaling
-        import numpy as np
         df_clean = df.copy()
         df_clean[self.encoded_numerical_features] = df_clean[self.encoded_numerical_features].replace([np.inf, -np.inf], np.nan)
         
@@ -265,7 +264,6 @@ class CIC2018Preprocessor(Preprocessor):
             
         # Sanitize 'Dst Port' to avoid unknown mapping (-1)
         if 'Dst Port' in df.columns:
-            import numpy as np
             # Coerce to numeric
             df['Dst Port'] = pd.to_numeric(df['Dst Port'], errors='coerce')
             before_na = df['Dst Port'].isna().sum()
