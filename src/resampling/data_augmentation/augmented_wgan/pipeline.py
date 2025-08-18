@@ -75,7 +75,6 @@ class AugmentOptions:
 
     # Dedup/trim/fill
     use_encoded_dedup: bool = True
-    use_raw_dedup: bool = True
     trim_to_need: bool = True
     use_final_fill: bool = True
 
@@ -181,9 +180,10 @@ def generate_augmented_samples(pre,
                                accept_rate: float = 0.2,
                                min_precision: float = 0.95,
                                options: Optional[AugmentOptions] = None) -> pd.DataFrame:
-    """Augment a minority class to tau using modular steps.
+    """Augment a minority class to tau and RETURN ENCODED DATAFRAME (no inverse).
 
-    Options allow turning on/off parts to support both CIC (full) and NSL-KDD (simpler) flows.
+    Flow: encode → train critic/WGAN → generate encoded → optional postfilter → encoded-dedup →
+    optional fill/trim → return enc_train + accepted_enc.
     """
     opts = options or AugmentOptions(accept_rate=accept_rate, min_precision=min_precision)
     logger.info(f"[+] Augmenting {class_name}: {len(train_df)} -> {tau}")
@@ -263,15 +263,9 @@ def generate_augmented_samples(pre,
             except Exception as e:
                 logger.warning(f"[Fill] skipped: {e}")
 
-    # Inverse and dedup raw vs original
-    gen_raw_unique = pre.inverse_transform(accepted_enc)
-    if opts.use_raw_dedup:
-        real_raw = pd.concat([train_df, test_df], ignore_index=True).drop_duplicates()
-        real_tuples = set(map(tuple, real_raw.values))
-        unique_raw_mask = [tuple(row) not in real_tuples for row in gen_raw_unique.values]
-        gen_raw_unique = gen_raw_unique.loc[unique_raw_mask]
-    augmented = pd.concat([train_df, gen_raw_unique], ignore_index=True)
-    logger.info(f"[+] {class_name} augmented: {len(train_df)} -> {len(augmented)}")
-    return augmented
+    # Return encoded augmented dataframe (enc_train + accepted_enc)
+    augmented_enc = pd.concat([enc_train, accepted_enc], ignore_index=True)
+    logger.info(f"[+] {class_name} augmented (encoded): {len(enc_train)} + {len(accepted_enc)} -> {len(augmented_enc)}")
+    return augmented_enc
 
 

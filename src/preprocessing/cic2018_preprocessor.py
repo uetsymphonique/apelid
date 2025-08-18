@@ -12,52 +12,31 @@ logger = get_logger(__name__)
 class CIC2018Preprocessor(Preprocessor):
     def __init__(self):
         
-        # self.original_features = ['Dst Port', 'Protocol', # 2
-        #                           'Timestamp', # dropped(1) # 3
-        #                           'Flow Duration', 'Tot Fwd Pkts', 'Tot Bwd Pkts', 'TotLen Fwd Pkts', # 7
-        #                           'TotLen Bwd Pkts', 'Fwd Pkt Len Max', 'Fwd Pkt Len Min', 'Fwd Pkt Len Mean', # 11
-        #                           'Fwd Pkt Len Std', 'Bwd Pkt Len Max', 'Bwd Pkt Len Min', 'Bwd Pkt Len Mean', # 15
-        #                           'Bwd Pkt Len Std', 'Flow Byts/s', 'Flow Pkts/s', # 18
-        #                           'Flow IAT Mean', 'Flow IAT Std', 'Flow IAT Max', 'Flow IAT Min', # 22
-        #                           'Fwd IAT Tot', 'Fwd IAT Mean', 'Fwd IAT Std', 'Fwd IAT Max', 'Fwd IAT Min', # 27
-        #                           'Bwd IAT Tot', 'Bwd IAT Mean', 'Bwd IAT Std', 'Bwd IAT Max', 'Bwd IAT Min', # 32
-        #                           'Fwd PSH Flags', # 33
-        #                           'Bwd PSH Flags', # dropped(2) # 34
-        #                           'Fwd URG Flags', # 35
-        #                           'Bwd URG Flags', # dropped(3) # 36
-        #                           'Fwd Header Len', 'Bwd Header Len', 'Fwd Pkts/s', 'Bwd Pkts/s', # 40
-        #                           'Pkt Len Min', 'Pkt Len Max', 'Pkt Len Mean', 'Pkt Len Std', 'Pkt Len Var', # 45
-        #                           'FIN Flag Cnt', 'SYN Flag Cnt', 'RST Flag Cnt', 'PSH Flag Cnt', 'ACK Flag Cnt', # 50
-        #                           'URG Flag Cnt', 'CWE Flag Count', 'ECE Flag Cnt', # 53
-        #                           'Down/Up Ratio', 'Pkt Size Avg', 'Fwd Seg Size Avg', 'Bwd Seg Size Avg', # 57
-        #                           'Fwd Byts/b Avg', 'Fwd Pkts/b Avg', 'Fwd Blk Rate Avg', 'Bwd Byts/b Avg', 'Bwd Pkts/b Avg', 'Bwd Blk Rate Avg', # dropped(9) # 63
-        #                           'Subflow Fwd Pkts', 'Subflow Fwd Byts', 'Subflow Bwd Pkts', 'Subflow Bwd Byts', # 67
-        #                           'Init Fwd Win Byts', 'Init Bwd Win Byts', 'Fwd Act Data Pkts', 'Fwd Seg Size Min', # 71
-        #                           'Active Mean', 'Active Std', 'Active Max', 'Active Min', # 75
-        #                           'Idle Mean', 'Idle Std', 'Idle Max', 'Idle Min', # 79
-        #                           'Label' # 80
-        #                           ]
-        
-
-        # All features from majority schema (80 columns) minus dropped columns
-        self.all_features = [
-            'Dst Port', 'Protocol', 'Flow Duration', 'Tot Fwd Pkts', 'Tot Bwd Pkts', # 5
-            'TotLen Fwd Pkts', 'TotLen Bwd Pkts', 'Fwd Pkt Len Max', 'Fwd Pkt Len Min', # 9
-            'Fwd Pkt Len Mean', 'Fwd Pkt Len Std', 'Bwd Pkt Len Max', 'Bwd Pkt Len Min', # 13
-            'Bwd Pkt Len Mean', 'Bwd Pkt Len Std', 'Flow Byts/s', 'Flow Pkts/s', # 17
-            'Flow IAT Mean', 'Flow IAT Std', 'Flow IAT Max', 'Flow IAT Min', # 21
-            'Fwd IAT Tot', 'Fwd IAT Mean', 'Fwd IAT Std', 'Fwd IAT Max', 'Fwd IAT Min', # 26
-            'Bwd IAT Tot', 'Bwd IAT Mean', 'Bwd IAT Std', 'Bwd IAT Max', 'Bwd IAT Min', # 31
-            'Fwd PSH Flags', 'Fwd URG Flags', 'Fwd Header Len', 'Bwd Header Len', # 35
-            'Fwd Pkts/s', 'Bwd Pkts/s', 'Pkt Len Min', 'Pkt Len Max', 'Pkt Len Mean', # 40
-            'Pkt Len Std', 'Pkt Len Var', 'FIN Flag Cnt', 'SYN Flag Cnt', 'RST Flag Cnt', # 45
-            'PSH Flag Cnt', 'ACK Flag Cnt', 'URG Flag Cnt', 'CWE Flag Count', 'ECE Flag Cnt', # 50
-            'Down/Up Ratio', 'Pkt Size Avg', 'Fwd Seg Size Avg', 'Bwd Seg Size Avg', # 54
-            'Subflow Fwd Pkts', 'Subflow Fwd Byts', 'Subflow Bwd Pkts', 'Subflow Bwd Byts', # 58
-            'Init Fwd Win Byts', 'Init Bwd Win Byts', 'Fwd Act Data Pkts', 'Fwd Seg Size Min', # 62
-            'Active Mean', 'Active Std', 'Active Max', 'Active Min', 'Idle Mean', 'Idle Std', # 68
-            'Idle Max', 'Idle Min' # 70
-        ]
+        # Original features
+        # 'Dst Port', 'Protocol', # 2
+        # 'Timestamp', # dropped(1) # 3
+        # 'Flow Duration', 'Tot Fwd Pkts', 'Tot Bwd Pkts', 'TotLen Fwd Pkts', # 7
+        # 'TotLen Bwd Pkts', 'Fwd Pkt Len Max', 'Fwd Pkt Len Min', 'Fwd Pkt Len Mean', # 11
+        # 'Fwd Pkt Len Std', 'Bwd Pkt Len Max', 'Bwd Pkt Len Min', 'Bwd Pkt Len Mean', # 15
+        # 'Bwd Pkt Len Std', 'Flow Byts/s', 'Flow Pkts/s', # 18
+        # 'Flow IAT Mean', 'Flow IAT Std', 'Flow IAT Max', 'Flow IAT Min', # 22
+        # 'Fwd IAT Tot', 'Fwd IAT Mean', 'Fwd IAT Std', 'Fwd IAT Max', 'Fwd IAT Min', # 27
+        # 'Bwd IAT Tot', 'Bwd IAT Mean', 'Bwd IAT Std', 'Bwd IAT Max', 'Bwd IAT Min', # 32
+        # 'Fwd PSH Flags', # 33
+        # 'Bwd PSH Flags', # dropped(2) # 34
+        # 'Fwd URG Flags', # 35
+        # 'Bwd URG Flags', # dropped(3) # 36
+        # 'Fwd Header Len', 'Bwd Header Len', 'Fwd Pkts/s', 'Bwd Pkts/s', # 40
+        # 'Pkt Len Min', 'Pkt Len Max', 'Pkt Len Mean', 'Pkt Len Std', 'Pkt Len Var', # 45
+        # 'FIN Flag Cnt', 'SYN Flag Cnt', 'RST Flag Cnt', 'PSH Flag Cnt', 'ACK Flag Cnt', # 50
+        # 'URG Flag Cnt', 'CWE Flag Count', 'ECE Flag Cnt', # 53
+        # 'Down/Up Ratio', 'Pkt Size Avg', 'Fwd Seg Size Avg', 'Bwd Seg Size Avg', # 57
+        # 'Fwd Byts/b Avg', 'Fwd Pkts/b Avg', 'Fwd Blk Rate Avg', 'Bwd Byts/b Avg', 'Bwd Pkts/b Avg', 'Bwd Blk Rate Avg', # dropped(9) # 63
+        # 'Subflow Fwd Pkts', 'Subflow Fwd Byts', 'Subflow Bwd Pkts', 'Subflow Bwd Byts', # 67
+        # 'Init Fwd Win Byts', 'Init Bwd Win Byts', 'Fwd Act Data Pkts', 'Fwd Seg Size Min', # 71
+        # 'Active Mean', 'Active Std', 'Active Max', 'Active Min', # 75
+        # 'Idle Mean', 'Idle Std', 'Idle Max', 'Idle Min', # 79
+        # 'Label' # 80
         
         # Features to keep after dropping constants and timestamp
         self.features = [
@@ -80,20 +59,43 @@ class CIC2018Preprocessor(Preprocessor):
         ]
         
         self.label_column = 'Label'
-        
-        # Categorical features for OneHot encoding
-        self.encoded_categorical_features = ['Protocol'] # 1
 
-        # Ordinal-encoded features (for classical models); include 'Dst Port'
-        # For 'Dst Port', we will fit full range [1..65535] to handle unseen values
-        self.encoded_categorical_features_ordinal = ['Protocol', 'Dst Port']
-        
+        self.cat_features = ['Protocol', 'Dst Port']
+        self.cont_features =  [
+            'Flow Duration', 'Tot Fwd Pkts', 'Tot Bwd Pkts', # 3
+            'TotLen Fwd Pkts', 'TotLen Bwd Pkts', 'Fwd Pkt Len Max', 'Fwd Pkt Len Min', # 7
+            'Fwd Pkt Len Mean', 'Fwd Pkt Len Std', 'Bwd Pkt Len Max', 'Bwd Pkt Len Min', # 11
+            'Bwd Pkt Len Mean', 'Bwd Pkt Len Std', 'Flow Byts/s', 'Flow Pkts/s', # 15
+            'Flow IAT Mean', 'Flow IAT Std', 'Flow IAT Max', 'Flow IAT Min', # 19
+            'Fwd IAT Tot', 'Fwd IAT Mean', 'Fwd IAT Std', 'Fwd IAT Max', 'Fwd IAT Min', # 24
+            'Bwd IAT Tot', 'Bwd IAT Mean', 'Bwd IAT Std', 'Bwd IAT Max', 'Bwd IAT Min', # 29
+            'Fwd Header Len', 'Bwd Header Len', 'Fwd Pkts/s', 'Bwd Pkts/s', # 33
+            'Pkt Len Min', 'Pkt Len Max', 'Pkt Len Mean', 'Pkt Len Std', 'Pkt Len Var', # 38
+            'Down/Up Ratio', 'Pkt Size Avg', 'Fwd Seg Size Avg', 'Bwd Seg Size Avg', # 42
+            'Subflow Fwd Pkts', 'Subflow Fwd Byts', 'Subflow Bwd Pkts', 'Subflow Bwd Byts', # 46
+            'Init Fwd Win Byts', 'Init Bwd Win Byts', 'Fwd Act Data Pkts', 'Fwd Seg Size Min', # 50
+            'Active Mean', 'Active Std', 'Active Max', 'Active Min', 'Idle Mean', 'Idle Std', # 56
+            'Idle Max', 'Idle Min' # 58
+        ]
+
         # Binary features (keep as 0/1, no scaling)
         self.binary_features = [
             'Fwd PSH Flags', 'Fwd URG Flags', 'FIN Flag Cnt', 'SYN Flag Cnt', # 4
             'RST Flag Cnt', 'PSH Flag Cnt', 'ACK Flag Cnt', 'URG Flag Cnt', # 8
             'CWE Flag Count', 'ECE Flag Cnt' # 10
         ]
+
+        ### in theory, Protocol and Dst Port are categorical features, but Dst Port has a very large range of values (1..65535)
+        ### so we will treat it as numerical for now but it will be encoded as ordinal when used for training with boosting models and DNN
+        ### Protocol and Dst Port will be ignored when we do approximately deduplication (approx_dedup_features)
+        
+        # Categorical features for OneHot encoding
+        self.encoded_categorical_features = ['Protocol'] # 1
+
+        # Ordinal-encoded features (for classical models); include 'Dst Port'
+        # For 'Dst Port', we will fit full range [1..65535] to handle unseen values
+        self.encoded_categorical_features_ordinal = self.cat_features
+        
         
         # Numerical features for MinMax scaling (all features minus categorical and binary)
         self.encoded_numerical_features = [
@@ -112,6 +114,8 @@ class CIC2018Preprocessor(Preprocessor):
             'Active Mean', 'Active Std', 'Active Max', 'Active Min', 'Idle Mean', 'Idle Std', # 57
             'Idle Max', 'Idle Min' # 59
         ]
+
+        self.numerical_features_for_approx_dedup = self.cont_features
         
         self.encoders = {
             'categorical': OneHotEncoder(sparse_output=False, handle_unknown='ignore'),
@@ -407,3 +411,7 @@ class CIC2018Preprocessor(Preprocessor):
         except Exception as e:
             logger.error(f"[-] Error exporting raw data to {file_path}: {e}")
             return False
+            
+
+    
+

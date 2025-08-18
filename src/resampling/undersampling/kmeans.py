@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 from sklearn.cluster import MiniBatchKMeans
-from imblearn.under_sampling import EditedNearestNeighbours
 from utils.logging import get_logger
 import time
 from tqdm import tqdm
@@ -9,10 +8,7 @@ from tqdm import tqdm
 logger = get_logger(__name__)
 
 class KMeansCompressor:
-    def __init__(self, tau=20000, random_state=42, use_enn=False):
-        self.tau = tau
-        self.random_state = random_state
-        self.use_enn = use_enn
+    def __init__(self, tau=20000, random_state=42):
         self.tau = tau
         self.random_state = random_state
 
@@ -25,7 +21,10 @@ class KMeansCompressor:
             return X_class, y_class
             
         # Use fewer clusters to ensure we get enough samples
-        n_clusters = min(self.tau // 2, len(X_class) // 2)  # Use half of tau as clusters
+        if self.tau * 3 < len(X_class):
+            n_clusters = self.tau
+        else:
+            n_clusters = min(self.tau // 2, len(X_class) // 2)  # Use half of tau as clusters
         logger.info(f"[+] Using {n_clusters} clusters for {len(X_class)} samples")
         
         if n_clusters < 2:
@@ -108,25 +107,8 @@ class KMeansCompressor:
         X_selected = X_class.iloc[selected_indices]
         y_selected = y_class.iloc[selected_indices]
         
-        # ENN refinement with progress tracking
-        logger.debug(f"[+] Checking ENN refinement requirements...")
-        enn_start = time.time()
-        
-        if self.use_enn and len(X_selected) > 1 and len(np.unique(y_selected)) > 1:
-            logger.debug(f"[+] Applying ENN refinement...")
-            with tqdm(total=1, desc="ENN Refinement", unit="process") as pbar:
-                enn = EditedNearestNeighbours(n_neighbors=3)
-                X_refined, y_refined = enn.fit_resample(X_selected, y_selected)
-                pbar.update(1)
-            enn_time = time.time() - enn_start
-            logger.debug(f"[+] ENN refinement completed in {enn_time:.2f} seconds, {len(X_refined)} samples remaining")
-        else:
-            logger.debug(f"[+] ENN skipped (single class or insufficient samples)")
-            X_refined, y_refined = X_selected, y_selected
-            enn_time = 0
-            
         total_time = time.time() - start_time
-        logger.debug(f"[+] Compression completed: {len(X_class)} → {len(X_refined)} samples in {total_time:.2f}s")
-        logger.debug(f"[+] Time breakdown: K-Means: {kmeans_time:.2f}s, Selection: {selection_time:.2f}s, ENN: {enn_time:.2f}s")
+        logger.debug(f"[+] Compression completed: {len(X_class)} → {len(X_selected)} samples in {total_time:.2f}s")
+        logger.debug(f"[+] Time breakdown: K-Means: {kmeans_time:.2f}s, Selection: {selection_time:.2f}s")
         
-        return X_refined, y_refined 
+        return X_selected, y_selected 

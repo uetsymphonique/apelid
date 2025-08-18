@@ -1,18 +1,19 @@
 import os
+import argparse
+import numpy as np
 import pandas as pd
 from utils.logging import setup_logging, get_logger
 from configs import cic2018
 from preprocessing.cic2018_preprocessor import CIC2018Preprocessor
 from resampling.undersampling.kmeans import KMeansCompressor
-from resampling.undersampling.enn_refiner import ENNRefiner
 from sklearn.model_selection import train_test_split
 
 logger = get_logger(__name__)
 
 DATA_FOLDER = cic2018.DATA_FOLDER
 ENCODED_PATH = os.path.join(DATA_FOLDER, "CIC2018_encoded.csv")
-RAW_PATH = os.path.join(DATA_FOLDER, "CIC2018_raw_processed.csv")
-UNIFIED_CLEAN_PATH = os.path.join(DATA_FOLDER, "CIC2018_unified_clean.csv")
+ENCODED_DIR = cic2018.ENCODED_DATA_FOLDER
+RAW_DIR = cic2018.RAW_PROCESSED_DATA_FOLDER
 
 
 def split_train_test(df, test_size=0.3, random_state=42):
@@ -26,92 +27,138 @@ def split_train_test(df, test_size=0.3, random_state=42):
     return train_df, test_df
 
 
+def _load_encoded_union(pre: CIC2018Preprocessor, labels: list[str]) -> pd.DataFrame:
+    """Load encoded union for the specified labels from either combined CSV or per-label files."""
+    if os.path.exists(ENCODED_PATH):
+        df = pd.read_csv(ENCODED_PATH)
+        label_ids = pre.encoders['label'].transform(labels)
+        return df[df['Label'].isin(label_ids)].copy()
+    # fallback: read per-label files
+    frames = []
+    for name in labels:
+        safe = cic2018.get_label_name(name)
+        path = os.path.join(ENCODED_DIR, f"cic2018_{safe}_encoded.csv")
+        if not os.path.exists(path):
+            logger.warning(f"[!] Missing encoded file for label {name}: {path}")
+            continue
+        df = pd.read_csv(path)
+        frames.append(df)
+    if not frames:
+        raise SystemExit("No encoded data found for requested labels. Run encoding or splitting first.")
+    return pd.concat(frames, ignore_index=True)
+
+
+def _compress_single_label(pre: CIC2018Preprocessor, encoded_source_df: pd.DataFrame, label_name: str,
+                           tau: int, extra_train: int = 2000, random_state: int = 42) -> tuple[pd.DataFrame, pd.DataFrame]:
+    lid = pre.encoders['label'].transform([label_name])[0]
+    class_df = encoded_source_df[encoded_source_df['Label'] == lid].drop_duplicates()
+    if class_df.empty:
+        raise ValueError(f"No rows for label {label_name} in encoded source")
+    # Compress directly to tau_effective = tau + extra_train using KMeans only
+    tau_effective = int(tau) + int(extra_train)
+    compressor = KMeansCompressor(tau=tau_effective)
+    X = class_df.drop(columns=['Label'])
+    y = class_df['Label']
+    Xc, yc = compressor.compress_majority_class(X, y)
+    comp_df = pd.concat([Xc, yc], axis=1).drop_duplicates()
+    logger.info(f"[+] Compressed {label_name}: {len(class_df)} -> {len(comp_df)} (target {tau_effective})")
+
+    # Custom split: train = floor(0.7 * tau) + extra_train, test = ceil(0.3 * tau)
+    base_train = int(np.floor(0.7 * tau))
+    base_test = int(tau - base_train)
+    train_count = base_train + int(extra_train)
+    test_count = base_test
+    if train_count + test_count > len(comp_df):
+        logger.warning(f"[!] Requested split {train_count}/{test_count} exceeds available {len(comp_df)}; adjusting train size")
+        train_count = max(0, len(comp_df) - test_count)
+
+    rng = np.random.RandomState(random_state)
+    idx = np.arange(len(comp_df))
+    rng.shuffle(idx)
+    train_idx = idx[:train_count]
+    test_idx = idx[train_count:train_count + test_count]
+    train_df = comp_df.iloc[train_idx]
+    test_df = comp_df.iloc[test_idx]
+    logger.info(f"[+] {label_name} split -> train: {len(train_df)} (base {base_train} + extra {extra_train}), test: {len(test_df)} (base {base_test})")
+    return train_df, test_df
+
+
 def main():
-    setup_logging("INFO")
-
-    # 1) Determine majority classes (> tau)
-    tau = 20000
-    tau_kmeans = 22000  # compress with slack, ENN will refine to exact tau
-    majority_labels = ['Benign', 'DDoS attacks-LOIC-HTTP', 'DDOS attack-HOIC', 
-                       'DoS attacks-Hulk', 'Bot', 'Infilteration', 
+    # Majority labels (fixed set as per existing logic)
+    majority_labels = ['Benign', 'DDoS attacks-LOIC-HTTP', 'DDOS attack-HOIC',
+                       'DoS attacks-Hulk', 'Bot', 'Infilteration',
                        'SSH-Bruteforce', 'DoS attacks-GoldenEye']
-    logger.info(f"[+] Majority labels (> {tau}): {majority_labels}")
+    
+    parser = argparse.ArgumentParser(description="CIC2018 majority compression (KMeans-only, enlarged train for future ENN)")
+    parser.add_argument('--mode', '-m', type=str, default='all', choices=['all', 'label'], help='Compress all majority labels or a single label')
+    parser.add_argument('--label', type=str, default=None, choices=majority_labels, help='Label name to compress when mode=label')
+    parser.add_argument('--tau', type=int, default=20000, help='Target per-class size after KMeans compression (no ENN)')
+    parser.add_argument('--extra-train', type=int, default=2000, help='Fixed extra samples to add to train split (train only)')
+    parser.add_argument('--log-level', '-l', type=str, default='INFO', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'])
+    args = parser.parse_args()
+    setup_logging(args.log_level)
 
-    # 2) Load raw processed for inverse mapping and encoded for compression
-    if not os.path.exists(ENCODED_PATH):
-        raise SystemExit(f"Encoded dataset not found: {ENCODED_PATH}. Run cli-cic.preprocessing first.")
-    encoded_df = pd.read_csv(ENCODED_PATH)
-    logger.info(f"[+] Loaded encoded dataset: {encoded_df.shape}")
+    tau = args.tau
+    extra_train = args.extra_train
 
-    # 3) Initialize preprocessor and load encoders
+    
+
     pre = CIC2018Preprocessor()
     if not pre.load_encoders():
-        logger.info("[+] Encoders not found. Fitting on unified clean dataset…")
-        if os.path.exists(UNIFIED_CLEAN_PATH):
-            clean_df = pd.read_csv(UNIFIED_CLEAN_PATH)
-            pre.setup_encoders(clean_df)  # No need for feature selection, already done
-            pre.save_encoders()
-        elif os.path.exists(RAW_PATH):
-            raw_df = pd.read_csv(RAW_PATH)
-            raw_df = pre.select_features_and_label(raw_df)
-            pre.setup_encoders(raw_df)
-            pre.save_encoders()
-        else:
-            raise FileNotFoundError("No suitable dataset found for encoder fitting")
+        logger.info("[+] Encoders not found. Setup encoders first (run cli.cic2018.encode_data)")
 
-    # 4) Encode label already numeric; ensure type
-    encoded_df['Label'] = encoded_df['Label'].astype(int)
+    if args.mode == 'label':
+        if not args.label:
+            raise SystemExit("--label is required when --mode label")
+        if args.label not in majority_labels:
+            logger.warning(f"[!] Provided label is not in predefined majority set: {args.label}")
+        source_df = _load_encoded_union(pre, [args.label])
+        tr_enc, te_enc = _compress_single_label(pre, source_df, args.label, tau=tau, extra_train=extra_train)
 
-    # 5) Filter to majority classes (by original string names → convert to encoded ids)
-    label_ids = pre.encoders['label'].transform(majority_labels)
-    maj_df = encoded_df[encoded_df['Label'].isin(label_ids)].copy()
-    # Note: Since we're using unified clean dataset, minimal duplicates expected
-    # Only check for any encoding-induced duplicates
-    before = len(maj_df)
-    maj_df = maj_df.drop_duplicates()
-    if len(maj_df) != before:
-        logger.info(f"[+] Found {before - len(maj_df)} encoding-induced duplicates (removed)")
+        # Save per-label encoded and raw
+        safe = cic2018.get_label_name(args.label)
+        os.makedirs(ENCODED_DIR, exist_ok=True)
+        os.makedirs(RAW_DIR, exist_ok=True)
+        enc_train_path = os.path.join(ENCODED_DIR, f'cic2018_{safe}_majority_train_compressed_encoded.csv')
+        tr_enc.to_csv(enc_train_path, index=False)
+        logger.info(f"[+] Saved per-label encoded train: {enc_train_path}")
+
+        # Only save raw for test; train raw will be generated after ENN refine
+        raw_test = pre.inverse_transform(te_enc)
+        raw_test_path = os.path.join(RAW_DIR, f'cic2018_{safe}_majority_test_compressed_raw.csv')
+        raw_test.to_csv(raw_test_path, index=False)
+        logger.info(f"[+] Saved per-label raw test: {raw_test_path}")
+
     else:
-        logger.info(f"[+] No duplicates found in majority subset (as expected from unified clean data)")
-    logger.info(f"[+] Majority subset: {maj_df.shape}")
+        logger.info(f"[+] Majority labels (> {tau} target): {majority_labels}")
+        source_df = _load_encoded_union(pre, majority_labels)
 
-    # 6) Compress each majority class to tau with KMeans, then ENN refine to exact tau
-    compressor = KMeansCompressor(tau=tau_kmeans, use_enn=False)
-    compressed_frames = []
-    for lid in label_ids:
-        class_df = maj_df[maj_df['Label'] == lid].drop_duplicates()
-        X = class_df.drop(columns=['Label'])
-        y = class_df['Label']
-        Xc, yc = compressor.compress_majority_class(X, y)
-        comp_df = pd.concat([Xc, yc], axis=1).drop_duplicates()
-        compressed_frames.append(comp_df)
-        logger.info(f"[+] Compressed label {lid}: {len(class_df)} -> {len(comp_df)} (target {tau_kmeans})")
+        per_label_tr = []
+        per_label_te = []
+        os.makedirs(ENCODED_DIR, exist_ok=True)
+        os.makedirs(RAW_DIR, exist_ok=True)
 
-    compressed_majority = pd.concat(compressed_frames, ignore_index=True)
+        for name in majority_labels:
+            try:
+                tr_enc, te_enc = _compress_single_label(pre, source_df, name, tau=tau, extra_train=extra_train)
+            except Exception as e:
+                logger.warning(f"[!] Skip {name}: {e}")
+                continue
 
-    # ENN global refinement to ensure exactly tau per class
-    refiner = ENNRefiner(tau_final=tau)
-    compressed_majority = refiner.refine(compressed_majority, label_col='Label')
+            safe = cic2018.get_label_name(name)
+            # Save per-label encoded
+            enc_train_path = os.path.join(ENCODED_DIR, f'cic2018_{safe}_majority_train_compressed_encoded.csv')
+            tr_enc.to_csv(enc_train_path, index=False)
+            # Save only per-label raw test; raw train will be generated post-ENN
+            raw_test = pre.inverse_transform(te_enc)
+            raw_test_path = os.path.join(RAW_DIR, f'cic2018_{safe}_majority_test_compressed_raw.csv')
+            raw_test.to_csv(raw_test_path, index=False)
 
-    # 7) Split 70/30
-    train_df, test_df = split_train_test(compressed_majority, test_size=0.3, random_state=42)
+            per_label_tr.append(tr_enc)
+            per_label_te.append(te_enc)
+            logger.info(f"[+] Saved per-label outputs for {name}")
 
-    # 8) Save encoded train/test
-    enc_train_path = os.path.join(DATA_FOLDER, 'cic_majority_train_compressed_encoded.csv')
-    enc_test_path = os.path.join(DATA_FOLDER, 'cic_majority_test_compressed_encoded.csv')
-    train_df.to_csv(enc_train_path, index=False)
-    test_df.to_csv(enc_test_path, index=False)
-    logger.info(f"[+] Saved encoded: {enc_train_path}, {enc_test_path}")
-
-    # 9) Inverse to raw and save (using inverse transform for compatibility with downstream)
-    raw_train = pre.inverse_transform(train_df)
-    raw_test = pre.inverse_transform(test_df)
-    raw_train_path = os.path.join(DATA_FOLDER, 'cic_majority_train_compressed_raw.csv')
-    raw_test_path = os.path.join(DATA_FOLDER, 'cic_majority_test_compressed_raw.csv')
-    raw_train.to_csv(raw_train_path, index=False)
-    raw_test.to_csv(raw_test_path, index=False)
-    logger.info(f"[+] Saved raw: {raw_train_path}, {raw_test_path}")
-    logger.info(f"[+] Note: For original clean data, use {UNIFIED_CLEAN_PATH}")
+        # No combined outputs; per-label files only
 
     logger.info("[+] CIC majority compression completed")
 

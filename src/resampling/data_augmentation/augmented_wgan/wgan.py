@@ -315,7 +315,7 @@ class WGAN:
             # Logging
             if it % save_interval == 0:
                 elapsed = time.time() - start_time
-                logger.info(f"[+] Iter {it}: G_loss={G_loss.item():.4f}, D_loss={D_loss.item():.4f}, Time={elapsed:.1f}s")
+                logger.debug(f"[+] Iter {it}: G_loss={G_loss.item():.4f}, D_loss={D_loss.item():.4f}, Time={elapsed:.1f}s")
         
         logger.info(f"[+] WGAN training completed")
     

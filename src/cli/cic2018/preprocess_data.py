@@ -8,13 +8,15 @@ from collections import Counter
 
 import configs.cic2018
 from preprocessing.cic2018_preprocessor import CIC2018Preprocessor
-from dataservice.data_service import DataService
 from utils.logging import setup_logging, get_logger
 
 logger = get_logger(__name__)
 
 data_folder = configs.cic2018.ORIGINAL_DATA_FOLDER
 dest_folder = configs.cic2018.DATA_FOLDER
+dest_folder_by_label = configs.cic2018.CLEAN_MERGED_DATA_FOLDER
+
+os.makedirs(dest_folder_by_label, exist_ok=True)
 
 
 def read_header_columns(csv_path: str) -> List[str]:
@@ -67,21 +69,24 @@ def merge_csv_files_with_early_cleaning(
     csv_files: List[str],
     majority_schema: List[str],
     preprocessor: CIC2018Preprocessor,
+    output_dir: str,
     chunksize: int = 500_000,
 ):
     """
-    Merge CSV files with early feature selection and cleaning to reduce memory usage.
+    Phase 1: Stream-merge with early cleaning, then route rows per label into
+    per-label CSVs under output_dir using naming convention from configs.cic2018.
     """
-    logger.info("[+] Phase 1: Merge CSV files with early cleaning...")
-    
-    merged_chunks = []
+    logger.info("[+] Phase 1: Merge CSV files with early cleaning (stream -> per label files)...")
+    os.makedirs(output_dir, exist_ok=True)
+
     total_read = 0
     dropped_header_rows = 0
     feature_selection_logged = False
-    
+    per_label_counts: Counter = Counter()
+
     for fp in csv_files:
         logger.info(f"[+] Processing: {os.path.basename(fp)}")
-        
+
         for chunk in pd.read_csv(
             fp,
             usecols=majority_schema,  # Use only majority schema columns
@@ -90,65 +95,69 @@ def merge_csv_files_with_early_cleaning(
             chunksize=chunksize,
         ):
             total_read += len(chunk)
-            
+
             # Early feature selection to reduce memory usage (log only once)
             if not feature_selection_logged:
                 logger.info(f"[+] Applying feature selection to reduce memory usage...")
-                # Show what columns will be dropped
-                columns_to_drop = ['Timestamp', 'Bwd PSH Flags', 'Bwd URG Flags', 
-                                 'Fwd Byts/b Avg', 'Fwd Pkts/b Avg', 'Fwd Blk Rate Avg', 
-                                 'Bwd Byts/b Avg', 'Bwd Pkts/b Avg', 'Bwd Blk Rate Avg']
+                columns_to_drop = ['Timestamp', 'Bwd PSH Flags', 'Bwd URG Flags',
+                                   'Fwd Byts/b Avg', 'Fwd Pkts/b Avg', 'Fwd Blk Rate Avg',
+                                   'Bwd Byts/b Avg', 'Bwd Pkts/b Avg', 'Bwd Blk Rate Avg']
                 available_drops = [col for col in columns_to_drop if col in chunk.columns]
                 if available_drops:
                     logger.info(f"[+] Dropping columns: {available_drops}")
                 feature_selection_logged = True
-            
+
             # Temporarily suppress preprocessor logging to avoid spam
             preprocessor_logger = logging.getLogger("preprocessing.cic2018_preprocessor")
             original_level = preprocessor_logger.level
             preprocessor_logger.setLevel(logging.WARNING)
-            
+
             chunk = preprocessor.select_features_and_label(chunk)
-            
+
             # Restore original logging level
             preprocessor_logger.setLevel(original_level)
-            
+
             # Normalize and drop repeated header rows
             if "Label" not in chunk.columns:
                 raise RuntimeError(f"Missing 'Label' column in file {fp}")
-            
+
             chunk["Label"] = chunk["Label"].astype(str).str.strip()
             before = len(chunk)
             chunk = chunk[chunk["Label"] != "Label"]
             dropped_header_rows += before - len(chunk)
-            
-            # Early cleaning: remove missing and infinite values to reduce data size
-            # Use DataService for consistent cleaning
-            chunk = DataService.fix_missing_and_inf_values(chunk)
-            chunk = DataService.fix_duplicates(chunk, method="pandas")
-            
-            if len(chunk) > 0:
-                merged_chunks.append(chunk)
-    
-    logger.info(f"[+] Merging {len(merged_chunks)} chunks...")
-    merged_df = pd.concat(merged_chunks, ignore_index=True)
-    
+
+            # Clean missing/inf and intra-chunk duplicates
+            chunk = preprocessor.remove_missing_and_inf_values(chunk)
+            chunk = preprocessor.fix_duplicates(chunk, method="pandas")
+
+            if len(chunk) == 0:
+                continue
+
+            # Route rows per label to per-label CSVs (append mode)
+            for lbl, sub_df in chunk.groupby('Label'):
+                if len(sub_df) == 0:
+                    continue
+                safe_label = configs.cic2018.get_label_name(lbl)
+                out_path = os.path.join(output_dir, f"cic2018_{safe_label}_clean_merged.csv")
+                write_header = not os.path.exists(out_path)
+                sub_df.to_csv(out_path, index=False, mode='a', header=write_header)
+                per_label_counts[lbl] += len(sub_df)
+
     logger.info(f"[+] Phase 1 complete:")
     logger.info(f"    - Total rows read: {total_read}")
     logger.info(f"    - Dropped header rows: {dropped_header_rows}")
-    logger.info(f"    - Merged data shape after early cleaning: {merged_df.shape}")
-    
-    return merged_df
+    logger.info(f"    - Labels written: {len(per_label_counts)}")
+    return per_label_counts
 
 
-def deduplicate_dataframe(df: pd.DataFrame, stage_name: str = "", precheck: bool = False, dedup_method: str = "auto"):
+def deduplicate_dataframe(df: pd.DataFrame, stage_name: str = "", precheck: bool = False, postcheck: bool = False, preprocessor: CIC2018Preprocessor = None):
     """
     Remove duplicates from dataframe using DataService with optimized methods for dataset size.
     """
     logger.info(f"[+] Deduplicating {stage_name} data...")
     
     # Use DataService static methods for consistent deduplication
-    has_duplicates = DataService.check_duplicates(df) if precheck else True
+    has_duplicates = preprocessor.check_duplicates(df) if precheck else True
     
     if has_duplicates:
         before_dedup = len(df)
@@ -157,20 +166,20 @@ def deduplicate_dataframe(df: pd.DataFrame, stage_name: str = "", precheck: bool
             logger.info(f"[+] Found {duplicate_count} duplicates in {stage_name} data")
         
         # Use DataService with auto method selection for optimal performance
-        df_clean = DataService.fix_duplicates(df, method=dedup_method)
+        df_clean = preprocessor.fix_duplicates(df)
         after_dedup = len(df_clean)
         duplicates_removed = before_dedup - after_dedup
         
         logger.info(f"[+] {stage_name} deduplication: {duplicates_removed} duplicates removed")
         logger.info(f"[+] Final {stage_name} shape: {df_clean.shape}")
         
-        # Verify no duplicates remain
-        final_dup_check = DataService.check_duplicates(df_clean)
-        if final_dup_check:
-            remaining_dups = df_clean.duplicated().sum()
-            logger.warning(f"[!] WARNING: Still {remaining_dups} duplicates remaining!")
-        else:
-            logger.info(f"[+] Verification: No duplicates remaining in {stage_name} data")
+        if postcheck:
+            final_dup_check = preprocessor.check_duplicates(df_clean)
+            if final_dup_check:
+                remaining_dups = df_clean.duplicated().sum()
+                logger.warning(f"[!] WARNING: Still {remaining_dups} duplicates remaining!")
+            else:
+                logger.info(f"[+] Verification: No duplicates remaining in {stage_name} data")
         
         return df_clean
     else:
@@ -180,18 +189,15 @@ def deduplicate_dataframe(df: pd.DataFrame, stage_name: str = "", precheck: bool
 
 def main():
     """
-    Unified preprocessing pipeline:
-    1. Merge CSV files with early feature selection and cleaning
-    2. Deduplicate merged data
-    3. Setup encoders and encode data
-    4. Deduplicate encoded data
-    5. Export encoded and inverse-transformed data
+    Phase 1-2 preprocessing pipeline:
+    1. Stream-merge CSV files with early cleaning and write per-label CSVs to CLEAN_MERGED_DATA_FOLDER
+    2. Per-label final deduplication pass over written files
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("--precheck", action="store_true", help="Precheck for duplicates")
     parser.add_argument("--log-level", type=str, default="INFO", help="Logging level")
-    parser.add_argument("--dedup-method", type=str, default="auto", choices=["auto", "pandas", "streaming", "external"],
-                        help="Deduplication method: auto, pandas, streaming, external")
+    parser.add_argument("--postcheck", action="store_true", help="Postcheck for duplicates")
+    parser.add_argument("--get-label-distribution", action="store_true", help="Get label distribution")
     args = parser.parse_args()
     setup_logging(args.log_level)
     
@@ -210,7 +216,7 @@ def main():
     
     logger.info(f"[+] Found {len(csv_files)} CSV files")
     logger.info("[+] ===========================================")
-    logger.info("[+] UNIFIED PREPROCESSING PIPELINE STARTED")
+    logger.info("[+] PHASE 1-2 PREPROCESSING PIPELINE STARTED")
     logger.info("[+] ===========================================")
     
     # Initialize preprocessor
@@ -220,76 +226,51 @@ def main():
     logger.info("[+] Detecting schema across CSV files...")
     majority_schema, file_to_schema = detect_majority_schema(csv_files)
     
-    # Phase 1: Merge CSV files with early cleaning
-    merged_df = merge_csv_files_with_early_cleaning(csv_files, majority_schema, preprocessor)
-    
-    # Phase 2: Final deduplication on merged data
-    logger.info("[+] Phase 2: Final deduplication on merged data...")
-    clean_df = deduplicate_dataframe(merged_df, "merged", dedup_method=args.dedup_method)
-    
-    logger.info(f"[+] Final clean merged data: {clean_df.shape}")
-    logger.info("[+] Label distribution in clean data:")
-    for label, count in clean_df['Label'].value_counts().items():
-        logger.info(f"    {label}: {count}")
-    
-    # Phase 3: Setup encoders and encode data
-    logger.info("[+] Phase 3: Setting up encoders and encoding...")
-    
-    # Setup encoders on clean data
-    logger.info("[+] Setting up encoders...")
-    preprocessor.setup_encoders(clean_df)
-    preprocessor.save_encoders()
-    
-    # Encode data
-    logger.info("[+] Encoding features...")
-    encoded_df = preprocessor.preprocess_encode_numerical_features(clean_df.copy())
-    encoded_df = preprocessor.preprocess_encode_binary_features(encoded_df)
-    encoded_df = preprocessor.preprocess_encode_label(encoded_df)
-    encoded_df = preprocessor.preprocess_encode_categorical_features(encoded_df)
-    
-    logger.info(f"[+] Encoded data shape: {encoded_df.shape}")
-    logger.info("[+] Encoded label distribution:")
-    logger.info(encoded_df['Label'].value_counts())
-    
-    # Phase 4: Deduplicate encoded data
-    logger.info("[+] Phase 4: Deduplicating encoded data...")
-    final_encoded_df = deduplicate_dataframe(encoded_df, "encoded", dedup_method=args.dedup_method)
-    
-    # Phase 5: Export final datasets
-    logger.info("[+] Phase 5: Exporting final datasets...")
-    
-    # Create output directory
-    os.makedirs(dest_folder, exist_ok=True)
-    
-    # Export encoded data
-    encoded_output_path = os.path.join(dest_folder, "CIC2018_encoded.csv")
-    logger.info(f"[+] Exporting encoded data to: {encoded_output_path}")
-    preprocessor.export_encoded_data(final_encoded_df, encoded_output_path)
-    
-    # Export raw data (inverse transform)
-    logger.info("[+] Inverse transforming encoded data...")
-    raw_df = preprocessor.inverse_transform(final_encoded_df)
-    raw_output_path = os.path.join(dest_folder, "CIC2018_raw_processed.csv")
-    logger.info(f"[+] Exporting raw processed data to: {raw_output_path}")
-    preprocessor.export_raw_data(raw_df, raw_output_path)
-    
-    # Final summary
+    # Phase 1: Stream-merge and write per-label files
+    per_label_counts = merge_csv_files_with_early_cleaning(
+        csv_files, majority_schema, preprocessor, dest_folder_by_label
+    )
+
+    if args.get_label_distribution and per_label_counts:
+        logger.info("[+] Label distribution (written in Phase 1):")
+        for label, count in per_label_counts.most_common():
+            logger.info(f"    {label}: {count}")
+
+    # Phase 2: Final deduplication pass per label file
+    logger.info("[+] Phase 2: Final deduplication per label file...")
+    os.makedirs(dest_folder_by_label, exist_ok=True)
+    label_files = [
+        os.path.join(dest_folder_by_label, f)
+        for f in sorted(os.listdir(dest_folder_by_label))
+        if f.endswith('_clean_merged.csv')
+    ]
+
+    final_counts = {}
+    for lf in label_files:
+        try:
+            df_label = pd.read_csv(lf)
+            df_label = deduplicate_dataframe(df_label, stage_name=os.path.basename(lf), postcheck=args.postcheck, preprocessor=preprocessor)
+            df_label.to_csv(lf, index=False)
+            final_counts[os.path.basename(lf)] = len(df_label)
+        except Exception as e:
+            logger.warning(f"[!] Failed to deduplicate {lf}: {e}")
+
+    # Final summary for Phase 1-2
     logger.info("[+] ===========================================")
-    logger.info("[+] UNIFIED PREPROCESSING COMPLETED!")
+    logger.info("[+] PHASE 1-2 PREPROCESSING COMPLETED!")
     logger.info("[+] ===========================================")
     logger.info(f"[+] Input files processed: {len(csv_files)}")
-    logger.info(f"[+] Final encoded rows: {len(final_encoded_df)}")
-    logger.info(f"[+] Final raw processed rows: {len(raw_df)}")
-    logger.info(f"[+] Files created:")
-    logger.info(f"    - {encoded_output_path} (encoded for WGAN)")
-    logger.info(f"    - {raw_output_path} (raw for final training)")
-    logger.info(f"[+] Feature breakdown:")
-    logger.info(f"    - Categorical (OneHot): {len(preprocessor.encoded_categorical_features)} features")
-    logger.info(f"    - Binary: {len(preprocessor.binary_features)} features")
-    logger.info(f"    - Numerical (MinMax): {len(preprocessor.encoded_numerical_features)} features")
-    logger.info(f"    - Total features after encoding: {final_encoded_df.shape[1] - 1} (excluding Label)")
+    logger.info(f"[+] Per-label files written: {len(label_files)} @ {dest_folder_by_label}")
+    if final_counts:
+        logger.info("[+] Final per-label row counts (post-dedup):")
+        sample_items = list(final_counts.items())[:10]
+        for name, cnt in sample_items:
+            logger.info(f"    {name}: {cnt}")
+        if len(final_counts) > 10:
+            logger.info(f"    ... and {len(final_counts) - 10} more labels")
     logger.info("[+] ===========================================")
-    logger.info("[+] Ready for downstream tasks!")
+    logger.info("[+] Ready for Phase 3-4 encoding pipeline!")
+    logger.info("[+] Run: python encode_data.py to continue processing")
 
 
 if __name__ == "__main__":

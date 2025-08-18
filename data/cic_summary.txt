@@ -17,3 +17,20 @@
 2025-08-11 10:59:00 - __main__ - INFO -     SQL Injection: 84
 2025-08-11 10:59:00 - __main__ - INFO -     DoS attacks-SlowHTTPTest: 55
 2025-08-11 10:59:00 - __main__ - INFO -     FTP-BruteForce: 53
+
+2025-08-17 00:24:27 - __main__ - INFO - [+] Label distribution in original data:
+2025-08-17 00:24:28 - __main__ - INFO -     Benign: 10630662 (88.44%)
+2025-08-17 00:24:28 - __main__ - INFO -     DDoS attacks-LOIC-HTTP: 575364 (4.79%)
+2025-08-17 00:24:28 - __main__ - INFO -     DDOS attack-HOIC: 198861 (1.65%)
+2025-08-17 00:24:28 - __main__ - INFO -     DoS attacks-Hulk: 183072 (1.52%)
+2025-08-17 00:24:28 - __main__ - INFO -     Bot: 144535 (1.20%)
+2025-08-17 00:24:28 - __main__ - INFO -     Infilteration: 139775 (1.16%)
+2025-08-17 00:24:28 - __main__ - INFO -     SSH-Bruteforce: 94048 (0.78%)
+2025-08-17 00:24:28 - __main__ - INFO -     DoS attacks-GoldenEye: 41406 (0.34%)
+2025-08-17 00:24:28 - __main__ - INFO -     DoS attacks-Slowloris: 9908 (0.08%)
+2025-08-17 00:24:28 - __main__ - INFO -     DDOS attack-LOIC-UDP: 1730 (0.01%)
+2025-08-17 00:24:28 - __main__ - INFO -     Brute Force -Web: 555 (0.00%)
+2025-08-17 00:24:28 - __main__ - INFO -     Brute Force -XSS: 228 (0.00%)
+2025-08-17 00:24:28 - __main__ - INFO -     SQL Injection: 84 (0.00%)
+2025-08-17 00:24:28 - __main__ - INFO -     DoS attacks-SlowHTTPTest: 55 (0.00%)
+2025-08-17 00:24:28 - __main__ - INFO -     FTP-BruteForce: 53 (0.00%)

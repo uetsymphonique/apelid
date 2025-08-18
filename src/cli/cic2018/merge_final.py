@@ -1,103 +1,49 @@
 import os
+import argparse
 import pandas as pd
 from sklearn.utils import shuffle
-import numpy as np
 
 from utils.logging import get_logger, setup_logging
-from preprocessing.cic2018_preprocessor import CIC2018Preprocessor
-from datasvc.data_service import DataService
-
+from configs import cic2018
 
 logger = get_logger(__name__)
 
-DATA_FOLDER = "/dis/DS/minhtq/CIC-2018/"
-
-MAJ_TRAIN_RAW = os.path.join(DATA_FOLDER, "cic_majority_train_compressed_raw.csv")
-MAJ_TEST_RAW  = os.path.join(DATA_FOLDER, "cic_majority_test_compressed_raw.csv")
-MIN_TRAIN_RAW = os.path.join(DATA_FOLDER, "cic_minority_train_augmented_raw.csv")
-MIN_TEST_RAW  = os.path.join(DATA_FOLDER, "cic_minority_test_raw.csv")
-
-FINAL_TRAIN = os.path.join(DATA_FOLDER, "cic_final_train_balanced.csv")
-FINAL_TEST  = os.path.join(DATA_FOLDER, "cic_final_test.csv")
-
-
-def merge_final_datasets():
-    logger.info("[+] Starting CIC final dataset merge…")
-
-    # Load majority data
-    try:
-        maj_train = pd.read_csv(MAJ_TRAIN_RAW)
-        maj_test  = pd.read_csv(MAJ_TEST_RAW)
-        logger.info(f"[+] Loaded majority: train={len(maj_train)}, test={len(maj_test)}")
-    except FileNotFoundError as e:
-        logger.error(f"[-] Majority data not found: {e}. Run majority_compression first.")
-        return
-
-    # Load minority data
-    try:
-        min_train = pd.read_csv(MIN_TRAIN_RAW)
-        min_test  = pd.read_csv(MIN_TEST_RAW)
-        logger.info(f"[+] Loaded minority: train={len(min_train)}, test={len(min_test)}")
-    except FileNotFoundError as e:
-        logger.error(f"[-] Minority data not found: {e}. Run minority_wgan first.")
-        return
-
-    # Initialize preprocessor for info only
-    pre = CIC2018Preprocessor()
-
-    # Show distributions before merge
-    logger.info("[+] Majority train distribution:")
-    logger.info(maj_train['Label'].value_counts())
-    logger.info("[+] Minority train distribution:")
-    logger.info(min_train['Label'].value_counts())
-
-    # Merge
-    final_train = pd.concat([maj_train, min_train], ignore_index=True)
-    final_train = shuffle(final_train, random_state=42).reset_index(drop=True)
-
-    final_test = pd.concat([maj_test, min_test], ignore_index=True)
+DATA_FOLDER = cic2018.DATA_FOLDER
+RAW_DIR = cic2018.RAW_PROCESSED_DATA_FOLDER
+def merge_test_raw() -> str:
+    logger.info("[+] Merging per-label test RAW (majority + minority) …")
+    test_files = []
+    for fname in sorted(os.listdir(RAW_DIR)):
+        if fname.endswith('_majority_test_compressed_raw.csv') or fname.endswith('_minority_test_raw.csv'):
+            test_files.append(os.path.join(RAW_DIR, fname))
+    if not test_files:
+        raise SystemExit(f"No per-label test RAW files found in {RAW_DIR}.")
+    frames = []
+    for fp in test_files:
+        try:
+            df = pd.read_csv(fp)
+            frames.append(df)
+        except Exception as e:
+            logger.warning(f"[!] Skip test file {fp}: {e}")
+    final_test = pd.concat(frames, ignore_index=True)
     final_test = shuffle(final_test, random_state=42).reset_index(drop=True)
+    out_path = os.path.join(DATA_FOLDER, 'cic2018_final_test_raw.csv')
+    final_test.to_csv(out_path, index=False)
+    logger.info(f"[+] Saved merged test RAW: {out_path} ({len(final_test)})")
+    return out_path
 
-    # Clean: duplicates, inf -> NaN, missing values
-    def clean_df(df: pd.DataFrame, name: str) -> pd.DataFrame:
-        svc = DataService(df)
-        rows_before = len(svc.df)
-        # Duplicates
-        if svc.check_duplicates():
-            logger.info(f"[+] {name}: duplicates detected – dropping …")
-        svc.fix_duplicates()
-        rows_after_dup = len(svc.df)
-        if rows_after_dup != rows_before:
-            logger.info(f"[+] {name}: dropped {rows_before - rows_after_dup} duplicate rows")
-        # Infinity -> NaN
-        svc.df.replace([np.inf, -np.inf], np.nan, inplace=True)
-        # Missing
-        if svc.check_missing_values():
-            missing_before = svc.df.isna().sum().sum()
-            # DataService.fix_missing_values() doesn't assign; handle explicitly
-            svc.df = svc.df.dropna()
-            logger.info(f"[+] {name}: dropped rows with NaN/Inf (total NaNs before: {missing_before})")
-        return svc.df
 
-    final_train = clean_df(final_train, "Final Train")
-    final_test  = clean_df(final_test,  "Final Test")
+def main():
+    parser = argparse.ArgumentParser(description="Merge only test RAW; train RAW is produced by ENN refiner")
+    parser.add_argument('--log-level', type=str, default='INFO', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'])
+    args = parser.parse_args()
+    setup_logging(args.log_level)
 
-    # Report
-    logger.info("[+] Final training dataset:")
-    pre.info_dataset(final_train)
-    logger.info("[+] Final test dataset:")
-    pre.info_dataset(final_test)
-
-    # Save
-    final_train.to_csv(FINAL_TRAIN, index=False)
-    final_test.to_csv(FINAL_TEST, index=False)
-    logger.info("[+] Final datasets saved:")
-    logger.info(f"    - {FINAL_TRAIN} ({len(final_train)} samples)")
-    logger.info(f"    - {FINAL_TEST} ({len(final_test)} samples)")
+    test_path = merge_test_raw()
+    logger.info(f"[+] Done. Merged test RAW -> {test_path}")
 
 
 if __name__ == "__main__":
-    setup_logging("INFO")
-    merge_final_datasets()
+    main()
 
 

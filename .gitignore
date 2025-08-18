@@ -5,3 +5,6 @@ old_codes/
 *.egg-info/
 .conda/
 DABEL/
+models/
+scripts_not_used/
+approx_*

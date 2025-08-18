@@ -4,8 +4,13 @@ from colorama import Fore, Style, init
 
 # Initialize colorama
 init()
-
 import warnings
+warnings.filterwarnings(
+    "ignore",
+    message=r".*glibc.*older than 2\.28.*",
+    category=FutureWarning,
+    module=r"xgboost\.core",
+)
 
 
 
