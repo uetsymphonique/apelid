@@ -12,20 +12,25 @@ class KMeansCompressor:
         self.tau = tau
         self.random_state = random_state
 
-    def compress_majority_class(self, X_class, y_class):
+    def compress_majority_class(self, X_class, y_class, n_clusters: int | None = None):
         start_time = time.time()
         # logger.info(f"[+] Starting compression for class with {len(X_class)} samples")
         
         if len(X_class) <= self.tau:
             logger.info(f"[+] Class size ({len(X_class)}) <= tau ({self.tau}), no compression needed")
             return X_class, y_class
-            
-        # Use fewer clusters to ensure we get enough samples
-        if self.tau * 3 < len(X_class):
-            n_clusters = self.tau
-        else:
-            n_clusters = min(self.tau // 2, len(X_class) // 2)  # Use half of tau as clusters
-        logger.info(f"[+] Using {n_clusters} clusters for {len(X_class)} samples")
+        
+        if n_clusters is None:
+            # Use fewer clusters to ensure we get enough samples
+            if self.tau * 3 < len(X_class):
+                n_clusters = self.tau
+            else:
+                n_clusters = min(self.tau // 2, len(X_class) // 2)  # Use half of tau as clusters
+            logger.info(f"[+] Using {n_clusters} clusters for {len(X_class)} samples")
+
+            if n_clusters > 45000:
+                logger.warning(f"[-] n_clusters ({n_clusters}) is greater than 45000, setting to 45000")
+                n_clusters = 45000
         
         if n_clusters < 2:
             logger.warning(f"[-] Only {n_clusters} clusters found, using random sampling instead")

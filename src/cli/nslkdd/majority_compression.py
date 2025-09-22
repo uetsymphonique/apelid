@@ -94,17 +94,13 @@ if __name__ == "__main__":
     df = preprocessor.select_features_and_label(df)
     
     # Step 2: Data cleaning
-    original_df_svc = DataService(df)
-    logger.info(f"[+] Original dataset shape: {original_df_svc.df.shape}")
-    logger.info(f"[+] Original label distribution:")
-    logger.info(original_df_svc.df['Label'].value_counts())
-    
-    # Fix duplicates and missing values
-    original_df_svc.fix_duplicates()
-    original_df_svc.fix_missing_values()
+    df = preprocessor.remove_missing_and_inf_values(df)
+    df = preprocessor.fix_duplicates(df)
+
+    DataService.info_dataset(df, preprocessor.label_column)
     
     # Step 3: Setup encoders
-    preprocessor.setup_encoders(original_df_svc.df)
+    preprocessor.setup_encoders(df)
     preprocessor.save_encoders()
     
     # Step 4: Separate majority and minority classes

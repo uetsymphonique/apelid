@@ -1,0 +1,177 @@
+{
+  "accuracy": 0.9598487196101079,
+  "f1_weighted": 0.9597677876341476,
+  "precision_weighted": 0.9605817020322919,
+  "recall_weighted": 0.9598487196101079,
+  "classification_report": {
+    "Benign": {
+      "precision": 0.883892068683565,
+      "recall": 0.805,
+      "f1-score": 0.8426034185178999,
+      "support": 18800.0
+    },
+    "Bot": {
+      "precision": 0.9999468085106383,
+      "recall": 0.9999468085106383,
+      "f1-score": 0.9999468085106383,
+      "support": 18800.0
+    },
+    "Brute Force -Web": {
+      "precision": 0.8089887640449438,
+      "recall": 0.8780487804878049,
+      "f1-score": 0.8421052631578947,
+      "support": 82.0
+    },
+    "Brute Force -XSS": {
+      "precision": 0.8958333333333334,
+      "recall": 0.9555555555555556,
+      "f1-score": 0.9247311827956989,
+      "support": 45.0
+    },
+    "DDOS attack-HOIC": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 18800.0
+    },
+    "DDoS attacks-LOIC-HTTP": {
+      "precision": 0.999415235766307,
+      "recall": 1.0,
+      "f1-score": 0.999707532370849,
+      "support": 18800.0
+    },
+    "DoS attacks-GoldenEye": {
+      "precision": 0.9997584541062802,
+      "recall": 0.9998792124652736,
+      "f1-score": 0.999818829639471,
+      "support": 8279.0
+    },
+    "DoS attacks-Hulk": {
+      "precision": 0.9998404340194671,
+      "recall": 0.9998936170212765,
+      "f1-score": 0.9998670248131699,
+      "support": 18800.0
+    },
+    "DoS attacks-SlowHTTPTest": {
+      "precision": 0.36363636363636365,
+      "recall": 0.36363636363636365,
+      "f1-score": 0.36363636363636365,
+      "support": 11.0
+    },
+    "DoS attacks-Slowloris": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 1943.0
+    },
+    "FTP-BruteForce": {
+      "precision": 0.35714285714285715,
+      "recall": 0.45454545454545453,
+      "f1-score": 0.4,
+      "support": 11.0
+    },
+    "Infilteration": {
+      "precision": 0.8215595208995355,
+      "recall": 0.8938829787234043,
+      "f1-score": 0.8561966628454973,
+      "support": 18800.0
+    },
+    "SQL Injection": {
+      "precision": 0.5882352941176471,
+      "recall": 0.5882352941176471,
+      "f1-score": 0.5882352941176471,
+      "support": 17.0
+    },
+    "SSH-Bruteforce": {
+      "precision": 0.99994680002128,
+      "recall": 0.9997872340425532,
+      "f1-score": 0.9998670106657446,
+      "support": 18800.0
+    },
+    "accuracy": 0.9598487196101079,
+    "macro avg": {
+      "precision": 0.8370139953058728,
+      "recall": 0.8527436642218552,
+      "f1-score": 0.8440510993622051,
+      "support": 141988.0
+    },
+    "weighted avg": {
+      "precision": 0.9605817020322919,
+      "recall": 0.9598487196101079,
+      "f1-score": 0.9597677876341476,
+      "support": 141988.0
+    }
+  },
+  "features": [
+    "Dst Port",
+    "Protocol",
+    "Flow Duration",
+    "Tot Fwd Pkts",
+    "Tot Bwd Pkts",
+    "TotLen Fwd Pkts",
+    "TotLen Bwd Pkts",
+    "Fwd Pkt Len Max",
+    "Fwd Pkt Len Min",
+    "Fwd Pkt Len Mean",
+    "Fwd Pkt Len Std",
+    "Bwd Pkt Len Max",
+    "Bwd Pkt Len Min",
+    "Bwd Pkt Len Mean",
+    "Bwd Pkt Len Std",
+    "Flow Byts/s",
+    "Flow Pkts/s",
+    "Flow IAT Mean",
+    "Flow IAT Std",
+    "Flow IAT Max",
+    "Flow IAT Min",
+    "Fwd IAT Tot",
+    "Fwd IAT Mean",
+    "Fwd IAT Std",
+    "Fwd IAT Max",
+    "Fwd IAT Min",
+    "Bwd IAT Tot",
+    "Bwd IAT Mean",
+    "Bwd IAT Std",
+    "Bwd IAT Max",
+    "Bwd IAT Min",
+    "Fwd Header Len",
+    "Bwd Header Len",
+    "Fwd Pkts/s",
+    "Bwd Pkts/s",
+    "Pkt Len Min",
+    "Pkt Len Max",
+    "Pkt Len Mean",
+    "Pkt Len Std",
+    "Pkt Len Var",
+    "RST Flag Cnt",
+    "PSH Flag Cnt",
+    "ACK Flag Cnt",
+    "ECE Flag Cnt",
+    "Down/Up Ratio",
+    "Pkt Size Avg",
+    "Fwd Seg Size Avg",
+    "Bwd Seg Size Avg",
+    "Subflow Fwd Pkts",
+    "Subflow Fwd Byts",
+    "Subflow Bwd Pkts",
+    "Subflow Bwd Byts",
+    "Init Fwd Win Byts",
+    "Fwd Act Data Pkts",
+    "Fwd Seg Size Min",
+    "Active Mean",
+    "Active Std",
+    "Active Max",
+    "Active Min",
+    "Idle Mean",
+    "Idle Std",
+    "Idle Max",
+    "Idle Min"
+  ],
+  "cat_features": [
+    "Protocol",
+    "RST Flag Cnt",
+    "PSH Flag Cnt",
+    "ACK Flag Cnt",
+    "ECE Flag Cnt"
+  ]
+}

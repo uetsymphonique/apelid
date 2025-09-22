@@ -48,6 +48,7 @@ class NSLKDDPreprocessor(Preprocessor):
         ]
         self.binary_features = ['land', 'logged_in', 'is_host_login', 'is_guest_login']
         self.encoders = {}
+        self.encoders_dir = "encoders/nslkdd"
 
 
     def map_label(self, df: pd.DataFrame):
@@ -81,10 +82,11 @@ class NSLKDDPreprocessor(Preprocessor):
         self.encoders['ordinal'].fit(df[self.encoded_categorical_features])
         
 
-    def load_encoders(self, encoders_dir="encoders"):
+    def load_encoders(self, encoders_dir=None):
         """Load pre-trained encoders from saved files"""
         import joblib
-        
+        if encoders_dir is None:
+            encoders_dir = self.encoders_dir
         try:
             self.encoders = {
                 'categorical': joblib.load(f"{encoders_dir}/categorical_encoder.pkl"),
@@ -101,11 +103,14 @@ class NSLKDDPreprocessor(Preprocessor):
             logger.error(f"[-] Error loading encoders: {e}")
             return False
 
-    def save_encoders(self, encoders_dir="encoders"):
+    def save_encoders(self, encoders_dir=None):
         """Save trained encoders to files"""
         import joblib
         import os
         
+        if encoders_dir is None:
+            encoders_dir = self.encoders_dir
+            
         os.makedirs(encoders_dir, exist_ok=True)
         
         try:

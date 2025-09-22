@@ -51,3 +51,14 @@ class Preprocessor:
         """Check if dataframe contains duplicates"""
         return df.duplicated().any()
     
+    def remove_negative_numeric_rows(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Drop rows containing any negative values in numeric columns."""
+        logger.debug(f"[+] Dropping rows with any negative values in numeric columns from {df.shape[0]} rows")
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        if not numeric_cols:
+            logger.debug(f"[+] No numeric columns found")
+            return df
+        keep_mask = df[numeric_cols].ge(0).all(axis=1)
+        logger.debug(f"[+] to {df[keep_mask].shape[0]} rows")
+        return df[keep_mask]
+    

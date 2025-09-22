@@ -51,6 +51,7 @@ def setup_logging(log_level: str = 'INFO') -> None:
     root_logger.addHandler(console_handler)
     logging.getLogger('matplotlib').setLevel(logging.WARNING)
     logging.getLogger('art').setLevel(logging.ERROR)
+    logging.getLogger('numba').setLevel(logging.WARNING)
     warnings.filterwarnings("ignore")
 
 def get_logger(name: Optional[str] = None) -> logging.Logger:

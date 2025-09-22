@@ -21,6 +21,52 @@ def encode_with_preprocessor(pre, df: pd.DataFrame) -> pd.DataFrame:
     return df_enc
 
 
+def ensure_encoded_with_autodetect(pre, df: Optional[pd.DataFrame]) -> pd.DataFrame:
+    """Return an encoded dataframe. If input already looks encoded (all non-Label
+    columns numeric and Label is numeric), skip encoding. Otherwise, encode.
+
+    This keeps the pipeline generic across datasets while allowing callers to
+    pass pre-encoded inputs.
+    """
+    if df is None:
+        return pd.DataFrame()
+    if len(df) == 0:
+        return df
+
+    label_col = 'Label'
+    has_label = label_col in df.columns
+    non_label_cols = [c for c in df.columns if c != label_col]
+
+    # Detect numeric label
+    label_is_numeric = False
+    if has_label:
+        try:
+            from pandas.api import types as ptypes
+            label_is_numeric = ptypes.is_integer_dtype(df[label_col]) or ptypes.is_float_dtype(df[label_col])
+        except Exception:
+            label_is_numeric = False
+
+    # Detect any non-numeric feature
+    non_numeric_present = False
+    try:
+        from pandas.api import types as ptypes
+        non_numeric_present = any(not ptypes.is_numeric_dtype(df[c]) for c in non_label_cols)
+    except Exception:
+        # Conservative: assume needs encoding
+        non_numeric_present = True
+
+    # If looks already encoded, just coerce features to float if needed
+    if (not non_numeric_present) and (not has_label or label_is_numeric):
+        df_num = df.copy()
+        for c in non_label_cols:
+            if not isinstance(df_num[c].dtype, (float,)):
+                df_num[c] = pd.to_numeric(df_num[c], errors='coerce')
+        return df_num
+
+    # Otherwise, encode using preprocessor
+    return encode_with_preprocessor(pre, df)
+
+
 def build_encoded_keys(df_enc: pd.DataFrame, feat_cols: Iterable[str], decimals: int = 6) -> set:
     arr = df_enc[list(feat_cols)].astype(float).round(decimals).values
     return set(map(tuple, arr))
@@ -179,7 +225,10 @@ def generate_augmented_samples(pre,
                                device: str = 'auto',
                                accept_rate: float = 0.2,
                                min_precision: float = 0.95,
-                               options: Optional[AugmentOptions] = None) -> pd.DataFrame:
+                               options: Optional[AugmentOptions] = None,
+                               dataset_name: str = "cic2018",
+                               save_losses: bool = True,
+                               save_models: bool = False) -> pd.DataFrame:
     """Augment a minority class to tau and RETURN ENCODED DATAFRAME (no inverse).
 
     Flow: encode → train critic/WGAN → generate encoded → optional postfilter → encoded-dedup →
@@ -192,9 +241,9 @@ def generate_augmented_samples(pre,
         logger.info(f"[+] {class_name} already >= tau")
         return train_df
 
-    # Encode
-    enc_train = encode_with_preprocessor(pre, train_df)
-    enc_test = encode_with_preprocessor(pre, test_df)
+    # Encode (auto-detect); if inputs are already encoded, skip re-encoding
+    enc_train = ensure_encoded_with_autodetect(pre, train_df)
+    enc_test = ensure_encoded_with_autodetect(pre, test_df)
     feat_cols = [c for c in enc_train.columns if c != 'Label']
 
     # Load benign encoded (optional)
@@ -209,9 +258,11 @@ def generate_augmented_samples(pre,
 
     # Save artifacts
     safe_name = class_name.lower().replace(' ', '_').replace('/', '_')
-    wgan.save_models(f"models/wgan_cic_{safe_name}")
-    os.makedirs("wgan_losses", exist_ok=True)
-    wgan.plot_losses(f"wgan_losses/wgan_losses_cic_{safe_name}.png")
+    models_dir = f"models/{dataset_name}"
+    os.makedirs(models_dir, exist_ok=True)
+    wgan.save_models(f"{models_dir}/wgan_{safe_name}")
+    os.makedirs(f"reports/{dataset_name}/wgan_losses", exist_ok=True)
+    wgan.plot_losses(f"reports/{dataset_name}/wgan_losses/wgan_losses_{safe_name}.png")
 
     # Dedup keys
     real_keys = build_encoded_keys(enc_train, feat_cols) | build_encoded_keys(enc_test, feat_cols)
