@@ -11,3 +11,4 @@ approx_*
 .vscode/
 catboost_info/
 encoders/cic2018/umap_major.pkl
+build/

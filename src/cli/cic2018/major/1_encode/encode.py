@@ -1,10 +1,12 @@
 import os
 import argparse
 import pandas as pd
+import numpy as np
 
 from utils.logging import setup_logging, get_logger
 from configs import cic2018
 from preprocessing.cic2018_preprocessor import CIC2018Preprocessor
+from argparsers.baseparser import BaseParser
 
 
 logger = get_logger(__name__)
@@ -15,7 +17,7 @@ CLEAN_MERGED_DIR = cic2018.CLEAN_MERGED_DATA_FOLDER
 RAW_DIR = cic2018.RAW_PROCESSED_DATA_FOLDER
 
 
-def deduplicate_dataframe(df: pd.DataFrame, stage_name: str = "", precheck: bool = False, postcheck: bool = False,
+def deduplicate_dataframe(df: pd.DataFrame, stage_name: str = "",
                           preprocessor: CIC2018Preprocessor | None = None) -> pd.DataFrame:
     """
     Remove duplicates from dataframe using preprocessor's duplicate handling utilities.
@@ -24,28 +26,25 @@ def deduplicate_dataframe(df: pd.DataFrame, stage_name: str = "", precheck: bool
     if preprocessor is None:
         return df.drop_duplicates()
 
-    has_duplicates = preprocessor.check_duplicates(df) if precheck else True
+    # Exclude technical columns from duplicate key
+    tech_cols = [c for c in ['__rowid__', '__subset__'] if c in df.columns]
+    df_key = df.drop(columns=tech_cols) if tech_cols else df
+    has_duplicates = preprocessor.check_duplicates(df_key)
     if has_duplicates:
         before_dedup = len(df)
-        if precheck:
-            duplicate_count = df.duplicated().sum()
-            logger.info(f"[+] Found {duplicate_count} duplicates in {stage_name} data")
-
-        df_clean = preprocessor.fix_duplicates(df)
+        duplicate_count = df_key.duplicated().sum()
+        logger.info(f"[+] Found {duplicate_count} duplicates in {stage_name} data")
+        # Run dedup on key columns then align to original df
+        df_clean = df_key.drop_duplicates().copy()
+        # Re-attach technical columns by index alignment if needed
+        for c in tech_cols:
+            if c in df.columns and c not in df_clean.columns:
+                df_clean[c] = df.loc[df_clean.index, c]
         after_dedup = len(df_clean)
         duplicates_removed = before_dedup - after_dedup
 
         logger.info(f"[+] {stage_name} deduplication: {duplicates_removed} duplicates removed")
         logger.info(f"[+] Final {stage_name} shape: {df_clean.shape}")
-
-        if postcheck:
-            final_dup_check = preprocessor.check_duplicates(df_clean)
-            if final_dup_check:
-                remaining_dups = df_clean.duplicated().sum()
-                logger.warning(f"[!] WARNING: Still {remaining_dups} duplicates remaining!")
-            else:
-                logger.info(f"[+] Verification: No duplicates remaining in {stage_name} data")
-
         return df_clean
     else:
         logger.info(f"[+] No duplicates found in {stage_name} data")
@@ -78,10 +77,10 @@ def _select_label_files(input_dir: str, allowed_safe_labels: set[str], subset: s
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Encode per-label datasets for MAJORITY classes (select all or specific labels), no inverse/raw export")
+    parser = BaseParser(description="Encode per-label datasets for MAJORITY classes (select all or specific labels), no inverse/raw export")
     parser.add_argument('--input-dir', type=str, default=CLEAN_MERGED_DIR,
                         help='Input directory containing per-label clean merged CSVs')
-    parser.add_argument('--num-encoder', '-n', type=str, default='quantile_normal', choices=['minmax', 'quantile_normal', 'quantile_uniform'],
+    parser.add_argument('--num-encoder', '-n', type=str, default='standard', choices=['standard'],
                         help='Numerical encoder to use for majority encoding')
     parser.add_argument('--subset', type=str, default='full', choices=['full', 'train', 'test'],
                         help="Which subset of clean-merged to encode: full (unsplit), train or test")
@@ -91,12 +90,6 @@ def main():
                         help='List of label names to encode when mode=label')
     parser.add_argument('--exclude-labels', '-x', type=str, nargs='+', default=None, choices=cic2018.MAJORITY_LABELS,
                         help='Labels to exclude from encoding (applied after --mode/--labels)')
-    parser.add_argument('--precheck', action='store_true', help='Precheck for duplicates')
-    parser.add_argument('--postcheck', action='store_true', help='Postcheck for duplicates')
-    parser.add_argument('--inverse', action='store_true', help='After dedup, also inverse to RAW and export')
-    parser.add_argument('--sentinel-impute', type=str, default='none', choices=['median', 'zero', 'none'],
-                        help='Handle -1 sentinel in Init Fwd/Bwd Win Byts before scaling (default none; options: median/zero/none) with indicator columns')
-    parser.add_argument('--log-level', type=str, default='INFO', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'])
     args = parser.parse_args()
     setup_logging(args.log_level)
 
@@ -143,10 +136,8 @@ def main():
         # Resolve output directories based on subset
         if subset == 'full':
             encoded_out_dir = ENCODED_DIR
-            raw_out_dir = RAW_DIR
         else:
             encoded_out_dir = os.path.join(ENCODED_DIR, subset)
-            raw_out_dir = os.path.join(RAW_DIR, subset)
         os.makedirs(encoded_out_dir, exist_ok=True)
 
         logger.info(f"[+] Found {len(label_files)} majority label files (subset={subset})")
@@ -160,31 +151,36 @@ def main():
             logger.info(f"[+] Encoding {base} -> label={label_safe} (subset={subset})")
 
             df_label = pd.read_csv(lf, low_memory=False)
+            # Assign stable row id within this clean_merged file
+            df_label['__rowid__'] = np.arange(len(df_label), dtype=np.int64)
 
-            # Handle sentinel -1 columns before scaling (adds *_is_missing)
-            if args.sentinel_impute != 'none':
-                fill_val = 0.0 if args.sentinel_impute == 'zero' else 0.0
-                df_label = preprocessor.add_sentinel_indicators_and_impute_init_win_bytes(
-                    df_label, strategy='median' if args.sentinel_impute == 'median' else 'fixed', fill_value=fill_val
-                )
+            df_label = preprocessor.select_features_and_label(df_label)
+            # Preserve row id after feature selection
+            df_label['__rowid__'] = df_label.index.to_series().map(lambda i: i).astype(np.int64)
+            # df_label = preprocessor.coerce_feature_dtypes(df_label)
+
+
+            # Drop any negative numeric rows before scaling
+            # df_label = preprocessor.remove_negative_numeric_rows(df_label)
 
             # Numerical encode
-            if args.num_encoder == 'quantile_normal':
-                enc_df = preprocessor.preprocess_encode_numerical_features_quantile(df_label.copy(), clean_numerical_features_again=False)
+            if args.num_encoder == 'standard':
+                enc_df = preprocessor.preprocess_encode_numerical_features_standard(df_label.copy())
+
             else:
-                enc_df = preprocessor.preprocess_encode_numerical_features(df_label.copy(), clean_numerical_features_again=False)
+                raise ValueError(f"Invalid numerical encoder: {args.num_encoder}")
 
             # Binary and label/categorical encoding
             enc_df = preprocessor.preprocess_encode_binary_features(enc_df)
             enc_df = preprocessor.preprocess_encode_label(enc_df)
             enc_df = preprocessor.preprocess_encode_categorical_features(enc_df)
+            # Attach subset marker
+            enc_df['__subset__'] = subset
 
             # Deduplicate encoded per-label
             enc_df = deduplicate_dataframe(
                 enc_df,
                 stage_name=f"cic2018_{label_safe} (majority, encoded)",
-                precheck=args.precheck,
-                postcheck=args.postcheck,
                 preprocessor=preprocessor,
             )
 
@@ -195,15 +191,6 @@ def main():
             encoded_counts[label_safe] = len(enc_df)
             logger.info(f"[+] Saved encoded: {enc_path} ({len(enc_df)})")
 
-            # Optional inverse to RAW after dedup
-            if args.inverse:
-                os.makedirs(raw_out_dir, exist_ok=True)
-                numerical_inverse = 'quantile_normal' if args.num_encoder == 'quantile_normal' else 'minmax'
-                raw_df = preprocessor.inverse_transform(enc_df, numerical_inverse=numerical_inverse)
-                raw_fname = f"cic2018_{label_safe}_raw_processed.csv"
-                raw_path = os.path.join(raw_out_dir, raw_fname)
-                preprocessor.export_raw_data(raw_df, raw_path)
-                logger.info(f"[+] Saved raw (inverse): {raw_path} ({len(raw_df)})")
 
         logger.info("===========================================")
         logger.info(f"[+] MAJORITY ENCODING COMPLETED (subset={subset})")

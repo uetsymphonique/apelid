@@ -19,8 +19,6 @@ def main():
                         help="Root directory of clean merged data containing 'train' subfolder")
     parser.add_argument("--train-subdir", type=str, default="train",
                         help="Subdirectory under input-dir that holds per-label TRAIN files")
-    parser.add_argument("--sentinel-impute", type=str, default="none", choices=["median", "zero", "none"],
-                        help="Handle -1 sentinel in Init Fwd/Bwd Win Byts before fitting encoders (default zero)")
     parser.add_argument("--log-level", type=str, default="INFO",
                         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
                         help="Logging level")
@@ -61,13 +59,8 @@ def main():
         # Align to expected features and coerce dtypes
         df_part = preprocessor.select_features_and_label(df_part)
         df_part = preprocessor.coerce_feature_dtypes(df_part)
-        # Sentinel handling (-1) before fitting encoders to avoid distribution skew
-        if args.sentinel_impute != "none":
-            fill_val = 0.0 if args.sentinel_impute == "zero" else 0.0
-            df_part = preprocessor.add_sentinel_indicators_and_impute_init_win_bytes(
-                df_part, strategy=("median" if args.sentinel_impute == "median" else "fixed"), fill_value=fill_val
-            )
-        # Remove NaN/Inf and negatives (excluding sentinel columns inside preprocessor)
+        
+        # Remove NaN/Inf and negatives values before fitting encoders
         # df_part = preprocessor.remove_missing_and_inf_values(df_part)
         # df_part = preprocessor.remove_negative_numeric_rows(df_part)
         union_frames.append(df_part)

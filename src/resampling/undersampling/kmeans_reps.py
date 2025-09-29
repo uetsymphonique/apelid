@@ -1,7 +1,8 @@
 import numpy as np
-from sklearn.cluster import MiniBatchKMeans
+from sklearn.cluster import MiniBatchKMeans, KMeans
 from utils.logging import get_logger
 import time
+
 
 
 logger = get_logger(__name__)
@@ -20,22 +21,28 @@ class KMeansRepresentativeSelector:
     - ensure_topup(indices, population_size, need, random_state=42): top-up indices to target size
     """
 
-    def __init__(self, n_clusters: int, batch_size: int = 10000, random_state: int = 42):
+    def __init__(self, n_clusters: int, batch_size: int = 10000, random_state: int = 42, algorithm: str = 'minibatch'):
         self.n_clusters = int(n_clusters)
         self.batch_size = int(batch_size)
         self.random_state = int(random_state)
         self._kmeans: MiniBatchKMeans | None = None
         self._centers: np.ndarray | None = None
+        self.algorithm = 'full' if str(algorithm).lower() == 'full' else 'minibatch'
 
     @property
     def centers_(self) -> np.ndarray | None:
         return self._centers
 
     def fit(self, X: np.ndarray) -> None:
-        logger.debug(f"[KMeansReps] Fitting MiniBatchKMeans(n_clusters={self.n_clusters}, batch_size={self.batch_size})")
         time_start = time.time()
-        kmeans = MiniBatchKMeans(n_clusters=self.n_clusters, batch_size=self.batch_size, random_state=self.random_state)
-        kmeans.fit(X)
+        if self.algorithm == 'full':
+            logger.debug(f"[KMeansReps] Fitting KMeans(n_clusters={self.n_clusters})")
+            kmeans = KMeans(n_clusters=self.n_clusters, random_state=self.random_state)
+            kmeans.fit(X)
+        else:
+            logger.debug(f"[KMeansReps] Fitting MiniBatchKMeans(n_clusters={self.n_clusters}, batch_size={self.batch_size})")
+            kmeans = MiniBatchKMeans(n_clusters=self.n_clusters, batch_size=self.batch_size, random_state=self.random_state)
+            kmeans.fit(X)
         self._kmeans = kmeans
         self._centers = kmeans.cluster_centers_.astype(np.float32, copy=False)
         logger.info(f"[KMeansReps] Fit done. centers shape={self._centers.shape} in {time.time() - time_start:.2f} seconds")

@@ -24,29 +24,18 @@ def _resolve_cat_features(df: pd.DataFrame, label_col: str, user_cols: list[str]
         if missing:
             logger.warning(f"Categorical columns not found and will be ignored: {missing}")
         return [c for c in user_cols if c in df.columns]
-    # Heuristic: integer/low-card columns (excluding label) as categorical
+    # Heuristic: mapped integer flags as categorical
     candidates: list[str] = ['RST Flag Cnt', 'PSH Flag Cnt', 'ACK Flag Cnt', 'ECE Flag Cnt']
-    # for col in df.columns:
-    #     if col == label_col or col.startswith("__"):
-    #         continue
-    #     s = df[col]
-    #     if pd.api.types.is_integer_dtype(s) or (pd.api.types.is_float_dtype(s) and (s.dropna() % 1 == 0).all()):
-    #         try:
-    #             nunq = int(s.nunique(dropna=True))
-    #             if nunq <= max_cardinality:
-    #                 candidates.append(col)
-    #         except Exception:
-    #             pass
-    return candidates
+    return [c for c in candidates if c in df.columns]
 
 
 def main():
     try:
-        import xgboost as xgb
+        from sklearn.ensemble import GradientBoostingClassifier
     except Exception as e:
-        raise SystemExit(f"XGBoost is required. Please install: pip install xgboost. Error: {e}")
+        raise SystemExit(f"scikit-learn is required. Please install: pip install scikit-learn. Error: {e}")
 
-    parser = argparse.ArgumentParser(description="Train XGBoost on merged CIC2018 mapped train/test (no extra encoding)")
+    parser = argparse.ArgumentParser(description="Train GradientBoostingClassifier (GBM) or HistGradientBoosting on CIC2018")
     parser.add_argument('--train-in', type=str, default=_default_inputs()[0])
     parser.add_argument('--test-in', type=str, default=_default_inputs()[1])
     parser.add_argument('--label-col', type=str, default='Label')
@@ -54,21 +43,21 @@ def main():
     parser.add_argument('--cat-cols', type=str, nargs='*', default=None)
     parser.add_argument('--cat-max-card', type=int, default=256)
     parser.add_argument('--val-frac', type=float, default=0.1)
-    # XGB params
-    parser.add_argument('--device', type=str, default='auto', choices=['auto', 'CPU', 'GPU'])
-    parser.add_argument('--num-round', type=int, default=1200)
-    parser.add_argument('--eta', type=float, default=0.08)
-    parser.add_argument('--max-depth', type=int, default=8)
+    # Implementation choice
+    parser.add_argument('--impl', type=str, default='gbdt', choices=['gbdt', 'hist'])
+    # GBM params
+    parser.add_argument('--n-estimators', type=int, default=1000)
+    parser.add_argument('--learning-rate', type=float, default=0.1)
+    parser.add_argument('--max-depth', type=int, default=3)
     parser.add_argument('--subsample', type=float, default=0.9)
-    parser.add_argument('--colsample-bytree', type=float, default=0.9)
-    parser.add_argument('--lambda-l2', type=float, default=1.0)
-    parser.add_argument('--alpha-l1', type=float, default=0.0)
-    parser.add_argument('--early-stopping', type=int, default=100)
+    # HistGradientBoosting options
+    parser.add_argument('--early-stopping', type=int, default=30, help='Only for --impl hist: n_iter_no_change')
+    parser.add_argument('--n-threads', type=int, default=0, help='For --impl hist: set OMP_NUM_THREADS if >0')
     parser.add_argument('--random-seed', type=int, default=42)
     # Outputs
-    parser.add_argument('--model-out', type=str, default=os.path.join(cic2018.DATA_FOLDER, 'models', 'cic2018_xgb.json'))
-    parser.add_argument('--report-out', type=str, default=os.path.join(cic2018.REPORT_FOLDER, 'xgb', 'metrics.json'))
-    parser.add_argument('--cm-out', type=str, default=os.path.join(cic2018.REPORT_FOLDER, 'xgb', 'confusion_matrix.png'))
+    parser.add_argument('--model-out', type=str, default=os.path.join(cic2018.DATA_FOLDER, 'models', 'cic2018_gbm.joblib'))
+    parser.add_argument('--report-out', type=str, default=os.path.join(cic2018.REPORT_FOLDER, 'gbm', 'metrics.json'))
+    parser.add_argument('--cm-out', type=str, default=os.path.join(cic2018.REPORT_FOLDER, 'gbm', 'confusion_matrix.png'))
     parser.add_argument('--log-level', type=str, default='INFO', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'])
     args = parser.parse_args()
     setup_logging(args.log_level)
@@ -94,7 +83,7 @@ def main():
     X_test = test_df[common_cols].copy()
     y_test = test_df[label_col].copy()
 
-    # Determine categorical columns (already ordinal-mapped) and cast to int
+    # Cast selected categorical columns to int (already mapped)
     cat_cols = _resolve_cat_features(train_df[common_cols + [label_col]], label_col, args.cat_cols, args.cat_max_card)
     for c in cat_cols:
         if c in X_all.columns:
@@ -108,7 +97,7 @@ def main():
         stratify=y_all if y_all.nunique() > 1 else None
     )
 
-    # Label encode to 0..K-1 for XGB
+    # Label encode to 0..K-1
     from sklearn.preprocessing import LabelEncoder
     le = LabelEncoder()
     y_tr_enc = le.fit_transform(y_tr)
@@ -118,42 +107,53 @@ def main():
     num_class = int(len(class_names))
     logger.info(f"[+] Classes ({num_class}): {class_names}")
 
-    # DMatrix
-    dtrain = xgb.DMatrix(X_tr, label=y_tr_enc)
-    dval = xgb.DMatrix(X_val, label=y_val_enc)
-    dtest = xgb.DMatrix(X_test, label=y_test_enc)
-
-    # Params
-    if args.device == 'GPU' or (args.device == 'auto'):
-        tree_method = 'gpu_hist'
+    # Choose implementation
+    impl = args.impl
+    if impl == 'hist':
+        try:
+            from sklearn.ensemble import HistGradientBoostingClassifier
+        except Exception as e:
+            raise SystemExit(f"scikit-learn with HistGradientBoostingClassifier is required for --impl hist. Error: {e}")
+        # Configure threads via env vars if requested
+        if int(args.n_threads) > 0:
+            os.environ['OMP_NUM_THREADS'] = str(int(args.n_threads))
+            # os.environ['OPENBLAS_NUM_THREADS'] = os.environ.get('OPENBLAS_NUM_THREADS', str(int(args.n_threads)))
+            # os.environ['MKL_NUM_THREADS'] = os.environ.get('MKL_NUM_THREADS', str(int(args.n_threads)))
+            # os.environ['NUMEXPR_NUM_THREADS'] = os.environ.get('NUMEXPR_NUM_THREADS', str(int(args.n_threads)))
+            logger.info(f"[+] Using HistGradientBoosting with OMP_NUM_THREADS={args.n_threads}")
+        hb = HistGradientBoostingClassifier(
+            learning_rate=float(args.learning_rate),
+            max_iter=int(args.n_estimators),
+            max_depth=(None if int(args.max_depth) <= 0 else int(args.max_depth)),
+            random_state=int(args.random_seed),
+            validation_fraction=float(args.val_frac),
+            n_iter_no_change=int(args.early_stopping),
+            verbose=100,
+        )
+        logger.info(f"[+] Training HistGradientBoosting (iters={args.n_estimators}, lr={args.learning_rate}) …")
+        hb.fit(X_tr, y_tr_enc)
+        val_score = float(hb.score(X_val, y_val_enc))
+        logger.info(f"[+] Validation accuracy: {val_score:.4f}")
+        model_impl = hb
     else:
-        tree_method = 'hist'
-    params = {
-        'objective': 'multi:softprob',
-        'num_class': num_class,
-        'eta': float(args.eta),
-        'max_depth': int(args.max_depth),
-        'subsample': float(args.subsample),
-        'colsample_bytree': float(args.colsample_bytree),
-        'lambda': float(args.lambda_l2),
-        'alpha': float(args.alpha_l1),
-        'tree_method': tree_method,
-        'random_state': int(args.random_seed),
-        'eval_metric': 'mlogloss',
-        'verbose_eval': False,
-    }
-
-    # Train
-    logger.info(f"[+] Training XGBoost (tree_method={tree_method}) …")
-    watchlist = [(dtrain, 'train'), (dval, 'val')]
-    model = xgb.train(params, dtrain, num_boost_round=int(args.num_round), evals=watchlist,
-                      early_stopping_rounds=int(args.early_stopping))
+        from sklearn.ensemble import GradientBoostingClassifier
+        gbm = GradientBoostingClassifier(
+            n_estimators=int(args.n_estimators),
+            learning_rate=float(args.learning_rate),
+            max_depth=int(args.max_depth),
+            subsample=float(args.subsample),
+            random_state=int(args.random_seed)
+        )
+        logger.info(f"[+] Training GradientBoosting (n_estimators={args.n_estimators}, lr={args.learning_rate}) …")
+        gbm.fit(X_tr, y_tr_enc)
+        val_score = float(gbm.score(X_val, y_val_enc))
+        logger.info(f"[+] Validation accuracy: {val_score:.4f}")
+        model_impl = gbm
 
     # Predict
     from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, confusion_matrix
     logger.info("[+] Evaluating on test …")
-    proba = model.predict(dtest)
-    y_pred_enc = np.argmax(proba, axis=1)
+    y_pred_enc = model_impl.predict(X_test)
     y_pred = le.inverse_transform(y_pred_enc)
     acc = float(accuracy_score(y_test, y_pred))
     f1m = float(f1_score(y_test, y_pred, average='macro'))
@@ -162,8 +162,14 @@ def main():
     cm = confusion_matrix(y_test, y_pred, labels=class_names)
 
     # Save model and metrics
-    os.makedirs(os.path.dirname(args.model_out), exist_ok=True)
-    model.save_model(args.model_out)
+    try:
+        import joblib
+        os.makedirs(os.path.dirname(args.model_out), exist_ok=True)
+        joblib.dump(model_impl, args.model_out)
+        logger.info(f"[+] Saved model -> {args.model_out}")
+    except Exception as e:
+        logger.warning(f"[!] Failed to save model: {e}")
+
     os.makedirs(os.path.dirname(args.report_out), exist_ok=True)
     with open(args.report_out, 'w') as f:
         json.dump({
@@ -174,18 +180,15 @@ def main():
             'classes': class_names,
             'features': list(X_all.columns),
         }, f, indent=2)
-
-    logger.info(f"[+] Saved model -> {args.model_out}")
     logger.info(f"[+] Test accuracy={acc:.4f}, macro-F1={f1m:.4f}, macro-Precision={prem:.4f}, macro-Recall={recm:.4f}")
     logger.info(f"[+] Metrics JSON -> {args.report_out}")
 
-    # Log and plot confusion matrix (prefer original label names if encoders available)
+    # Confusion matrix (prefer original label names if encoders available)
     try:
         import matplotlib
         matplotlib.use('Agg')
         import matplotlib.pyplot as plt
         from sklearn.metrics import ConfusionMatrixDisplay
-        # Try to inverse-transform labels via CIC2018Preprocessor label encoder
         try:
             from preprocessing.cic2018_preprocessor import CIC2018Preprocessor
             pre = CIC2018Preprocessor()
@@ -196,7 +199,7 @@ def main():
             y_pred_orig = le_global.inverse_transform(np.asarray(y_pred))
             labels_sorted = sorted(np.unique(np.concatenate([y_test_orig, y_pred_orig])))
             cm_mat = confusion_matrix(y_test_orig, y_pred_orig, labels=labels_sorted)
-        except Exception as _e:
+        except Exception:
             labels_sorted = class_names
             cm_mat = cm
         logger.info("Confusion matrix (rows=true, cols=pred):")
@@ -218,5 +221,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
 
 

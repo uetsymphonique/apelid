@@ -6,6 +6,7 @@ import numpy as np
 
 from utils.logging import setup_logging, get_logger
 from configs import cic2018
+from preprocessing.cic2018_preprocessor import CIC2018Preprocessor
 
 
 logger = get_logger(__name__)
@@ -27,21 +28,21 @@ def _resolve_cat_features(df: pd.DataFrame, label_col: str, user_cols: list[str]
         return [c for c in user_cols if c in df.columns]
 
     # Heuristic: integer/low-cardinality columns (excluding label) as categorical
-    candidates: list[str] = []
-    for col in df.columns:
-        if col == label_col:
-            continue
-        if col.startswith("__"):
-            continue
-        s = df[col]
-        # Integer-like dtype
-        if pd.api.types.is_integer_dtype(s) or (pd.api.types.is_float_dtype(s) and (s.dropna() % 1 == 0).all()):
-            try:
-                nunq = int(s.nunique(dropna=True))
-                if nunq <= max_cardinality:
-                    candidates.append(col)
-            except Exception:
-                pass
+    candidates: list[str] = ['RST Flag Cnt', 'PSH Flag Cnt', 'ACK Flag Cnt', 'ECE Flag Cnt']
+    # for col in df.columns:
+    #     if col == label_col:
+    #         continue
+    #     if col.startswith("__"):
+    #         continue
+    #     s = df[col]
+    #     # Integer-like dtype
+    #     if pd.api.types.is_integer_dtype(s) or (pd.api.types.is_float_dtype(s) and (s.dropna() % 1 == 0).all()):
+    #         try:
+    #             nunq = int(s.nunique(dropna=True))
+    #             if nunq <= max_cardinality:
+    #                 candidates.append(col)
+    #         except Exception:
+    #             pass
     return candidates
 
 
@@ -218,14 +219,26 @@ def main():
     logger.info(f"[+] Test accuracy={acc:.4f}, weighted-F1={f1m:.4f}, weighted-Precision={prem:.4f}, weighted-Recall={recm:.4f}")
     logger.info(f"[+] Metrics JSON => {args.report_out}")
 
-    # Log and plot confusion matrix
+    # Log and plot confusion matrix (with inverse label names if encoders available)
     try:
         import matplotlib
         matplotlib.use('Agg')
         import matplotlib.pyplot as plt
         from sklearn.metrics import ConfusionMatrixDisplay
-        labels_sorted = sorted(np.unique(np.concatenate([y_test.values, np.array(y_pred)])))
-        cm_mat = confusion_matrix(y_test, y_pred, labels=labels_sorted)
+        # Attempt inverse transform of numeric labels to original class names
+        try:
+            pre = CIC2018Preprocessor()
+            if not pre.load_encoders():
+                raise RuntimeError("encoders not found")
+            le = pre.encoders.get('label')
+            y_test_orig = le.inverse_transform(np.asarray(y_test))
+            y_pred_orig = le.inverse_transform(np.asarray(y_pred, dtype=type(y_test.iloc[0]) if hasattr(y_test, 'iloc') else int))
+            labels_sorted = sorted(np.unique(np.concatenate([y_test_orig, y_pred_orig])))
+            cm_mat = confusion_matrix(y_test_orig, y_pred_orig, labels=labels_sorted)
+        except Exception as e:
+            logger.warning(f"[!] Could not inverse-transform labels for CM, falling back to numeric: {e}")
+            labels_sorted = sorted(np.unique(np.concatenate([y_test.values, np.array(y_pred)])))
+            cm_mat = confusion_matrix(y_test, y_pred, labels=labels_sorted)
         # Log CM to stdout
         logger.debug("Confusion matrix (rows=true, cols=pred):")
         header = "labels," + ",".join(map(str, labels_sorted))

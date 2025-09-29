@@ -49,30 +49,3 @@ MINORITY_LABELS = [
 
 def get_label_name(class_name: str) -> str:
     return class_name.lower().replace(' ', '_').replace('/', '_')
-
-
-# ---------- Reusable path helpers ----------
-
-def embedding_path(subset: str, label: str, *, filtered_benign: bool = False) -> str:
-    """Return absolute path to embedding parquet for the given subset/label.
-
-    - Benign may have a filtered variant stored with suffix _embedding_filtered.parquet
-    - Others use base _embedding.parquet
-    """
-    label_safe = get_label_name(label)
-    base_dir = os.path.join(EMBEDDINGS_FOLDER, subset)
-    if filtered_benign and subset == 'train':
-        return os.path.join(base_dir, f"cic2018_{label_safe}_embedding_filtered.parquet")
-    return os.path.join(base_dir, f"cic2018_{label_safe}_embedding.parquet")
-
-
-def kmeans_centers_path_train(label: str, *, benign_source: str | None = None) -> str:
-    """Default path to store MiniBatchKMeans centers under embeddings/train.
-    - Non-Benign: cic2018_<label>_kmeans_centers.npy
-    - Benign: cic2018_benign_kmeans_centers_<source>.npy where <source> in {filtered, base}
-    """
-    label_safe = get_label_name(label)
-    base_dir = os.path.join(EMBEDDINGS_FOLDER, 'train')
-    if label == 'Benign' and benign_source in {'filtered', 'base'}:
-        return os.path.join(base_dir, f"cic2018_{label_safe}_kmeans_centers_{benign_source}.npy")
-    return os.path.join(base_dir, f"cic2018_{label_safe}_kmeans_centers.npy")

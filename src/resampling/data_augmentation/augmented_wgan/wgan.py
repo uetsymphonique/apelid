@@ -143,19 +143,21 @@ class WGAN:
         
         return penalty
 
-    def prepare_data(self, df, use_label_column=False):
+    def prepare_data(self, df, use_label_column=False, critic_id=None):
         """Prepare data for training"""
         # Separate features and labels
         X = df.drop(columns=['Label']).values.astype(np.float32)
         y = df['Label'].values.astype(np.float32)
         
-        # If use_label_column=True we keep original binary labels (0/1),
-        # otherwise we default to all-ones (attack) – backward-compatible
-        if use_label_column:
-            y_binary = y  # assume already 0/1 (Benign=0, Attack=1)
+        # Map labels to binary using critic_id when provided: critic -> 0, others -> 1
+        if critic_id is not None:
+            y_binary = (y != float(critic_id)).astype(np.float32)
         else:
-            # For minority-only training previous logic: all samples are attacks
-            y_binary = np.ones_like(y, dtype=np.float32)
+            # If use_label_column=True keep provided labels (must already be 0/1), else all ones
+            if use_label_column:
+                y_binary = y
+            else:
+                y_binary = np.ones_like(y, dtype=np.float32)
         
         # Guard against empty dataset
         num_samples = len(X)

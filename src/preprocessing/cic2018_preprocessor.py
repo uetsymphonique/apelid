@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import os
 from utils.logging import get_logger, setup_logging
-from sklearn.preprocessing import OneHotEncoder, MinMaxScaler, OrdinalEncoder, QuantileTransformer
+from sklearn.preprocessing import OneHotEncoder, MinMaxScaler, OrdinalEncoder, QuantileTransformer, StandardScaler
 from sklearn.preprocessing import LabelEncoder
 import joblib
 
@@ -20,8 +20,8 @@ class CIC2018Preprocessor(Preprocessor):
             'Bwd Byts/b Avg', 'Bwd Pkts/b Avg', 'Bwd Blk Rate Avg', # Constant columns
             'Fwd PSH Flags', 'Fwd URG Flags', 'FIN Flag Cnt', # Binary columns (number 0 < 8%)
             'SYN Flag Cnt', 'URG Flag Cnt', 'CWE Flag Count',   # Binary columns (number 0 < 8%)
-            # 'RST Flag Cnt', 'PSH Flag Cnt', 'ACK Flag Cnt', 'ECE Flag Cnt' # Binary columns
-            'Init Bwd Win Byts',
+            'Init Bwd Win Byts', # more than 50% is negative
+            'Protocol', # just one value after remove negative rows
         ]
         # Original features
         # 'Dst Port', 'Protocol', # 2
@@ -47,35 +47,27 @@ class CIC2018Preprocessor(Preprocessor):
         
         # Features to keep after dropping constants and timestamp
         self.features = [
-            'Dst Port', 'Protocol', 'Flow Duration', 'Tot Fwd Pkts', 'Tot Bwd Pkts', # 5
-            'TotLen Fwd Pkts', 'TotLen Bwd Pkts', 'Fwd Pkt Len Max', 'Fwd Pkt Len Min', # 9
-            'Fwd Pkt Len Mean', 'Fwd Pkt Len Std', 'Bwd Pkt Len Max', 'Bwd Pkt Len Min', # 13
-            'Bwd Pkt Len Mean', 'Bwd Pkt Len Std', 'Flow Byts/s', 'Flow Pkts/s', # 17
-            'Flow IAT Mean', 'Flow IAT Std', 'Flow IAT Max', 'Flow IAT Min', # 21
-            'Fwd IAT Tot', 'Fwd IAT Mean', 'Fwd IAT Std', 'Fwd IAT Max', 'Fwd IAT Min', # 26
-            'Bwd IAT Tot', 'Bwd IAT Mean', 'Bwd IAT Std', 'Bwd IAT Max', 'Bwd IAT Min', # 31
-            # 'Fwd PSH Flags', 'Fwd URG Flags',
-            'Fwd Header Len', 'Bwd Header Len', # 35
-            'Fwd Pkts/s', 'Bwd Pkts/s', 'Pkt Len Min', 'Pkt Len Max', 'Pkt Len Mean', # 40
-            'Pkt Len Std', 'Pkt Len Var', 
-            # 'FIN Flag Cnt', 'SYN Flag Cnt', 
-            'RST Flag Cnt', # 45
-            'PSH Flag Cnt', 
-            'ACK Flag Cnt', 
-            # 'URG Flag Cnt', 'CWE Flag Count', 
-            'ECE Flag Cnt', # 50
-            'Down/Up Ratio', 'Pkt Size Avg', 'Fwd Seg Size Avg', 'Bwd Seg Size Avg', # 54
-            'Subflow Fwd Pkts', 'Subflow Fwd Byts', 'Subflow Bwd Pkts', 'Subflow Bwd Byts', # 58
-            'Init Fwd Win Byts', 
-            # 'Init Bwd Win Byts', 
-            'Fwd Act Data Pkts', 'Fwd Seg Size Min', # 62
-            'Active Mean', 'Active Std', 'Active Max', 'Active Min', 'Idle Mean', 'Idle Std', # 68
-            'Idle Max', 'Idle Min' # 70 -> 63
+            'Dst Port', 'Flow Duration', 'Tot Fwd Pkts', 'Tot Bwd Pkts', # 4
+            'TotLen Fwd Pkts', 'TotLen Bwd Pkts', 'Fwd Pkt Len Max', 'Fwd Pkt Len Min', # 8
+            'Fwd Pkt Len Mean', 'Fwd Pkt Len Std', 'Bwd Pkt Len Max', 'Bwd Pkt Len Min', # 12
+            'Bwd Pkt Len Mean', 'Bwd Pkt Len Std', 'Flow Byts/s', 'Flow Pkts/s', # 16
+            'Flow IAT Mean', 'Flow IAT Std', 'Flow IAT Max', 'Flow IAT Min', # 20
+            'Fwd IAT Tot', 'Fwd IAT Mean', 'Fwd IAT Std', 'Fwd IAT Max', 'Fwd IAT Min', # 25
+            'Bwd IAT Tot', 'Bwd IAT Mean', 'Bwd IAT Std', 'Bwd IAT Max', 'Bwd IAT Min', # 30
+            'Fwd Header Len', 'Bwd Header Len', # 32
+            'Fwd Pkts/s', 'Bwd Pkts/s', 'Pkt Len Min', 'Pkt Len Max', 'Pkt Len Mean', # 37
+            'Pkt Len Std', 'Pkt Len Var', 'RST Flag Cnt', 'PSH Flag Cnt', 'ACK Flag Cnt', 'ECE Flag Cnt', # 43
+            'Down/Up Ratio', 'Pkt Size Avg', 'Fwd Seg Size Avg', 'Bwd Seg Size Avg', # 47
+            'Subflow Fwd Pkts', 'Subflow Fwd Byts', 'Subflow Bwd Pkts', 'Subflow Bwd Byts', # 51
+            'Init Fwd Win Byts', 'Fwd Act Data Pkts', 'Fwd Seg Size Min', # 54
+            'Active Mean', 'Active Std', 'Active Max', 'Active Min', 'Idle Mean', 'Idle Std', # 60
+            'Idle Max', 'Idle Min' # 62
         ]
         
         self.label_column = 'Label'
 
-        self.cat_features = ['Protocol', 'Dst Port']
+        self.cat_features = ['Dst Port']
+
         self.cont_features =  [
             'Flow Duration', 'Tot Fwd Pkts', 'Tot Bwd Pkts', # 3
             'TotLen Fwd Pkts', 'TotLen Bwd Pkts', 'Fwd Pkt Len Max', 'Fwd Pkt Len Min', # 7
@@ -88,32 +80,18 @@ class CIC2018Preprocessor(Preprocessor):
             'Pkt Len Min', 'Pkt Len Max', 'Pkt Len Mean', 'Pkt Len Std', 'Pkt Len Var', # 38
             'Down/Up Ratio', 'Pkt Size Avg', 'Fwd Seg Size Avg', 'Bwd Seg Size Avg', # 42
             'Subflow Fwd Pkts', 'Subflow Fwd Byts', 'Subflow Bwd Pkts', 'Subflow Bwd Byts', # 46
-            'Init Fwd Win Byts', 
-            # 'Init Bwd Win Byts', 
-            'Fwd Act Data Pkts', 'Fwd Seg Size Min', # 50
-            'Active Mean', 'Active Std', 'Active Max', 'Active Min', 'Idle Mean', 'Idle Std', # 56
-            'Idle Max', 'Idle Min' # 58 -> 57
+            'Init Fwd Win Byts', 'Fwd Act Data Pkts', 'Fwd Seg Size Min', # 49
+            'Active Mean', 'Active Std', 'Active Max', 'Active Min', 'Idle Mean', 'Idle Std', # 55
+            'Idle Max', 'Idle Min' # 57
         ]
 
         # Binary features (keep as 0/1, no scaling)
         self.binary_features = [
-            # 'Fwd PSH Flags', 'Fwd URG Flags', 'FIN Flag Cnt', 'SYN Flag Cnt', # 4
-            'RST Flag Cnt', 'PSH Flag Cnt', 
-            'ACK Flag Cnt',
-            # 'URG Flag Cnt', # 8
-            # 'CWE Flag Count', 
-            'ECE Flag Cnt' # 10 -> 4
+            'RST Flag Cnt', 'PSH Flag Cnt', 'ACK Flag Cnt', 'ECE Flag Cnt' # 4
         ]
 
-    
-    
-
-        ### in theory, Protocol and Dst Port are categorical features, but Dst Port has a very large range of values (1..65535)
-        ### so we will treat it as numerical for now but it will be encoded as ordinal when used for training with boosting models and DNN
-        ### Protocol and Dst Port will be ignored when we do approximately deduplication (approx_dedup_features)
-        
         # Categorical features for OneHot encoding
-        self.encoded_categorical_features = ['Protocol'] # 1
+        self.encoded_categorical_features = [] # 0
 
         # Ordinal-encoded features (for classical models); include 'Dst Port'
         # For 'Dst Port', we will fit full range [1..65535] to handle unseen values
@@ -133,11 +111,9 @@ class CIC2018Preprocessor(Preprocessor):
             'Pkt Len Min', 'Pkt Len Max', 'Pkt Len Mean', 'Pkt Len Std', 'Pkt Len Var', # 39
             'Down/Up Ratio', 'Pkt Size Avg', 'Fwd Seg Size Avg', 'Bwd Seg Size Avg', # 43
             'Subflow Fwd Pkts', 'Subflow Fwd Byts', 'Subflow Bwd Pkts', 'Subflow Bwd Byts', # 47
-            'Init Fwd Win Byts', 
-            # 'Init Bwd Win Byts', 
-            'Fwd Act Data Pkts', 'Fwd Seg Size Min', # 51
-            'Active Mean', 'Active Std', 'Active Max', 'Active Min', 'Idle Mean', 'Idle Std', # 57
-            'Idle Max', 'Idle Min' # 59 -> 58
+            'Init Fwd Win Byts', 'Fwd Act Data Pkts', 'Fwd Seg Size Min', # 50
+            'Active Mean', 'Active Std', 'Active Max', 'Active Min', 'Idle Mean', 'Idle Std', # 56
+            'Idle Max', 'Idle Min' # 58
         ]
 
         self.numerical_features_for_approx_dedup = self.cont_features
@@ -145,9 +121,8 @@ class CIC2018Preprocessor(Preprocessor):
         self.encoders = {
             'categorical': OneHotEncoder(sparse_output=False, handle_unknown='ignore'),
             'numerical_minmax': MinMaxScaler(),
+            'numerical_standard': StandardScaler(),
             'label': LabelEncoder(),
-            # OrdinalEncoder will be instantiated with explicit categories below
-            # Additional independent numerical encoder using quantile transformation
             'numerical_quantile_normal': QuantileTransformer(
                 n_quantiles=1000,
                 output_distribution='normal',
@@ -180,68 +155,16 @@ class CIC2018Preprocessor(Preprocessor):
 
         return df
 
-    def remove_negative_numeric_rows(self, df: pd.DataFrame, ignore_sentinel_cols: bool = True) -> pd.DataFrame:
-        """Override: drop rows with negatives, optionally ignore known sentinel columns that use -1.
-        For CIC-IDS2018, 'Init Fwd Win Byts' and 'Init Bwd Win Byts' frequently use -1 as sentinel.
-        
-        Args:
-            df: Input DataFrame
-            ignore_sentinel_cols: If True, ignore sentinel columns when checking for negatives
-        """
-        logger.debug(f"[+] Removing negative numeric rows from {df.shape[0]} rows (ignore_sentinel_cols: {ignore_sentinel_cols})")
+    def remove_negative_numeric_rows(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Drop rows with negative values in any numeric column (no sentinel exceptions)."""
+        logger.debug(f"[+] Removing negative numeric rows from {df.shape[0]} rows")
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         if not numeric_cols:
             return df
-        
-        if ignore_sentinel_cols:
-            # ignore_cols = {'Init Fwd Win Byts', 'Init Bwd Win Byts'}
-            ignore_cols = {'Init Fwd Win Byts'}
-            check_cols = [c for c in numeric_cols if c not in ignore_cols]
-        else:
-            check_cols = numeric_cols
-            
-        if not check_cols:
-            return df
+        check_cols = numeric_cols
         keep_mask = df[check_cols].ge(0).all(axis=1)
         logger.debug(f"[+] to {df[keep_mask].shape[0]} rows")
         return df[keep_mask]
-
-    # === Sentinel handling for encoding ===
-    @property
-    def sentinel_minus1_features(self) -> list:
-        # return ['Init Fwd Win Byts', 'Init Bwd Win Byts']
-        return ['Init Fwd Win Byts']
-
-    def add_sentinel_indicators_and_impute_init_win_bytes(self, df: pd.DataFrame, strategy: str = 'fixed', fill_value: float = 0.0) -> pd.DataFrame:
-        """For columns that use -1 as sentinel, add indicator and impute the value before scaling.
-        - Adds '<col>_is_missing' as 0/1
-        - Replaces -1 with median (>=0) or a fixed fill_value
-        """
-        out = df.copy()
-        for col in self.sentinel_minus1_features:
-            if col not in out.columns:
-                continue
-            ind_col = f"{col}_is_missing"
-            try:
-                out[ind_col] = (out[col] == -1).astype('Int8')
-            except Exception:
-                out[ind_col] = (out[col] == -1).astype(int)
-            # compute replacement
-            replace_val: float
-            if strategy == 'median':
-                nonneg = pd.to_numeric(out[col], errors='coerce')
-                nonneg = nonneg[nonneg.ge(0)]
-                if len(nonneg) > 0:
-                    replace_val = float(nonneg.median())
-                else:
-                    replace_val = float(fill_value)
-            else:
-                replace_val = float(fill_value)
-            # apply
-            mask = out[col] == -1
-            if mask.any():
-                out.loc[mask, col] = replace_val
-        return out
 
     def select_features_and_label(self, df: pd.DataFrame):
         """Select features and label, dropping unwanted columns"""
@@ -257,32 +180,45 @@ class CIC2018Preprocessor(Preprocessor):
         
         selected_columns = available_features + [self.label_column]
         return df[selected_columns]
-        
-    def setup_encoders(self, df: pd.DataFrame, clean_numerical_features_again: bool = False):
-        """Setup encoders for CIC-2018 features"""
+    
+    def drop_rows_with_zero_heavy_continuous(self, df: pd.DataFrame, threshold_frac: float = 0.5, threshold_count: int | None = None) -> pd.DataFrame:
+        """Drop rows where the number of continuous features equal to 0 exceeds a threshold.
 
+        Args:
+            df: Input DataFrame containing continuous feature columns
+            threshold_frac: Fraction of continuous features that being zero would mark a row for dropping
+            threshold_count: Absolute number of zero-valued continuous features to trigger dropping.
+                              If provided, overrides threshold_frac.
+
+        Returns:
+            Filtered DataFrame with zero-heavy rows removed.
+        """
+        present_cont_cols = [c for c in self.cont_features if c in df.columns]
+        if not present_cont_cols:
+            return df
+        if threshold_count is None:
+            threshold_count = int(len(present_cont_cols) * float(threshold_frac))
+        try:
+            zero_counts = (df[present_cont_cols] == 0).sum(axis=1)
+            keep_mask = zero_counts < int(threshold_count)
+            return df[keep_mask]
+        except Exception as e:
+            logger.warning(f"[!] Failed zero-heavy row filtering: {e}")
+            return df
+        
+    def setup_encoders(self, df: pd.DataFrame):
+        """Setup encoders for CIC-2018 features"""
+        logger.debug(f"[+] Setting up encoders for CIC-2018 features")
         
         # Handle infinity values before fitting encoders
         df_clean = df.copy()
         
-        # Replace infinity with NaN for numerical features
-        if clean_numerical_features_again and self.encoded_numerical_features and all(col in df_clean.columns for col in self.encoded_numerical_features):
-            
-            df_clean[self.encoded_numerical_features] = df_clean[self.encoded_numerical_features].replace([np.inf, -np.inf], np.nan)
-            # Drop rows with NaN in numerical features
-            before_count = len(df_clean)
-            df_clean = df_clean.dropna(subset=self.encoded_numerical_features)
-            after_count = len(df_clean)
-            if before_count != after_count:
-                logger.info(f"[+] Dropped {before_count - after_count} rows with infinity/NaN in numerical features when fitting MinMaxScaler for CIC-2018")
-        
         # Fit encoders
         if self.encoded_categorical_features and all(col in df_clean.columns for col in self.encoded_categorical_features):
             self.encoders['categorical'].fit(df_clean[self.encoded_categorical_features])
-            # logging unique values for categorical features
-            logger.info(f"[+] Unique values for categorical features:")
+            logger.debug(f"[+] Unique values for categorical features:")
             for col in self.encoded_categorical_features:
-                logger.info(f"    - {col}: {df_clean[col].unique()}")
+                logger.debug(f"    - {col}: {df_clean[col].unique()}")
 
         # Prepare OrdinalEncoder with categories (Protocol from data, Dst Port full range)
         if self.encoded_categorical_features_ordinal and all(col in df_clean.columns for col in self.encoded_categorical_features_ordinal):
@@ -298,6 +234,8 @@ class CIC2018Preprocessor(Preprocessor):
         
         if self.encoded_numerical_features and all(col in df_clean.columns for col in self.encoded_numerical_features):
             self.encoders['numerical_minmax'].fit(df_clean[self.encoded_numerical_features])
+            # Fit standard scaler on numerical features
+            self.encoders['numerical_standard'].fit(df_clean[self.encoded_numerical_features])
             # Fit quantile transformer independently on the same numerical features
             self.encoders['numerical_quantile_normal'].fit(df_clean[self.encoded_numerical_features])
             self.encoders['numerical_quantile_uniform'].fit(df_clean[self.encoded_numerical_features])
@@ -320,6 +258,7 @@ class CIC2018Preprocessor(Preprocessor):
             self.encoders = {
                 'categorical': joblib.load(f"{encoders_dir}/categorical_encoder.pkl"),
                 'numerical_minmax': joblib.load(f"{encoders_dir}/numerical_minmax_encoder.pkl"),
+                'numerical_standard': joblib.load(f"{encoders_dir}/numerical_standard_encoder.pkl"),
                 'numerical_quantile_normal': joblib.load(f"{encoders_dir}/numerical_quantile_normal_encoder.pkl"),
                 'numerical_quantile_uniform': joblib.load(f"{encoders_dir}/numerical_quantile_uniform_encoder.pkl"),
                 'label': joblib.load(f"{encoders_dir}/label_encoder.pkl"),
@@ -345,6 +284,7 @@ class CIC2018Preprocessor(Preprocessor):
         try:
             joblib.dump(self.encoders['categorical'], f"{encoders_dir}/categorical_encoder.pkl")
             joblib.dump(self.encoders['numerical_minmax'], f"{encoders_dir}/numerical_minmax_encoder.pkl")
+            joblib.dump(self.encoders['numerical_standard'], f"{encoders_dir}/numerical_standard_encoder.pkl")
             joblib.dump(self.encoders['numerical_quantile_normal'], f"{encoders_dir}/numerical_quantile_normal_encoder.pkl")
             joblib.dump(self.encoders['numerical_quantile_uniform'], f"{encoders_dir}/numerical_quantile_uniform_encoder.pkl")
             joblib.dump(self.encoders['label'], f"{encoders_dir}/label_encoder.pkl")
@@ -374,67 +314,44 @@ class CIC2018Preprocessor(Preprocessor):
         df = df.drop(columns=self.encoded_categorical_features)
         return df
 
-    def preprocess_encode_numerical_features(self, df: pd.DataFrame, clean_numerical_features_again: bool = False):
+    def preprocess_encode_numerical_features(self, df: pd.DataFrame):
         """Encode numerical features using MinMax scaling"""
         if not self.encoded_numerical_features or not all(col in df.columns for col in self.encoded_numerical_features):
             return df
-            
-        # Handle infinity values before scaling
         df_clean = df.copy()
-        if clean_numerical_features_again and self.encoded_numerical_features and all(col in df_clean.columns for col in self.encoded_numerical_features):
-            df_clean[self.encoded_numerical_features] = df_clean[self.encoded_numerical_features].replace([np.inf, -np.inf], np.nan)
-        
-        # Drop rows with NaN in numerical features
-        before_count = len(df_clean)
-        df_clean = df_clean.dropna(subset=self.encoded_numerical_features)
-        after_count = len(df_clean)
-        if before_count != after_count:
-            logger.info(f"[+] Dropped {before_count - after_count} rows with infinity/NaN during encoding numerical features for CIC-2018")
-            
         scaler = self.encoders['numerical_minmax']
         df_clean[self.encoded_numerical_features] = scaler.transform(df_clean[self.encoded_numerical_features])
         return df_clean
 
-    def preprocess_encode_numerical_features_quantile(self, df: pd.DataFrame, clean_numerical_features_again: bool = False):
+    def preprocess_encode_numerical_features_quantile(self, df: pd.DataFrame):
         """Encode numerical features using QuantileTransformer (independent of MinMax)."""
         if not self.encoded_numerical_features or not all(col in df.columns for col in self.encoded_numerical_features):
-            return df
-            
-        # Handle infinity values before transforming
+            return df     
         df_clean = df.copy()
-        if clean_numerical_features_again and self.encoded_numerical_features and all(col in df_clean.columns for col in self.encoded_numerical_features):
-            df_clean[self.encoded_numerical_features] = df_clean[self.encoded_numerical_features].replace([np.inf, -np.inf], np.nan)
-        
-        # Drop rows with NaN in numerical features
-        before_count = len(df_clean)
-        df_clean = df_clean.dropna(subset=self.encoded_numerical_features)
-        after_count = len(df_clean)
-        if before_count != after_count:
-            logger.info(f"[+] Dropped {before_count - after_count} rows with infinity/NaN during quantile encoding numerical features for CIC-2018")
-
         qtx = self.encoders.get('numerical_quantile_normal')
         if qtx is None:
             raise RuntimeError("Quantile encoder not initialized. Call setup_encoders() first.")
-
         df_clean[self.encoded_numerical_features] = qtx.transform(df_clean[self.encoded_numerical_features])
         return df_clean
 
-    def preprocess_encode_numerical_features_quantile_uniform(self, df: pd.DataFrame, clean_numerical_features_again: bool = False):
+    def preprocess_encode_numerical_features_standard(self, df: pd.DataFrame):
+        """Encode numerical features using StandardScaler (mean=0, std=1)."""
+        logger.debug(f"[+] Encoding numerical features using StandardScaler (mean=0, std=1)")
+        if not self.encoded_numerical_features or not all(col in df.columns for col in self.encoded_numerical_features):
+            return df
+        df_clean = df.copy()
+
+        scaler = self.encoders.get('numerical_standard')
+        if scaler is None:
+            raise RuntimeError("Standard scaler not initialized. Call setup_encoders() first.")
+        df_clean[self.encoded_numerical_features] = scaler.transform(df_clean[self.encoded_numerical_features])
+        return df_clean
+
+    def preprocess_encode_numerical_features_quantile_uniform(self, df: pd.DataFrame):
         """Encode numerical features using QuantileTransformer (independent of MinMax)."""
         if not self.encoded_numerical_features or not all(col in df.columns for col in self.encoded_numerical_features):
             return df
-            
-        # Handle infinity values before transforming
         df_clean = df.copy()
-        if clean_numerical_features_again and self.encoded_numerical_features and all(col in df_clean.columns for col in self.encoded_numerical_features):
-            df_clean[self.encoded_numerical_features] = df_clean[self.encoded_numerical_features].replace([np.inf, -np.inf], np.nan)
-        
-        # Drop rows with NaN in numerical features
-        before_count = len(df_clean)
-        df_clean = df_clean.dropna(subset=self.encoded_numerical_features)
-        after_count = len(df_clean)
-        if before_count != after_count:
-            logger.info(f"[+] Dropped {before_count - after_count} rows with infinity/NaN during quantile encoding numerical features for CIC-2018")
             
         qtx = self.encoders.get('numerical_quantile_uniform')
         if qtx is None:
@@ -538,6 +455,13 @@ class CIC2018Preprocessor(Preprocessor):
                         logger.debug(f"[+] Inverse transformed {len(existing_numerical)} numerical features via QuantileTransformer (uniform)")
                     except Exception as e:
                         logger.warning(f"[!] Quantile inverse failed, skipping numerical inverse: {e}")
+                elif numerical_inverse == 'standard' and 'numerical_standard' in self.encoders:
+                    scaler = self.encoders['numerical_standard']
+                    try:
+                        df_inverse[existing_numerical] = scaler.inverse_transform(df_inverse[existing_numerical])
+                        logger.debug(f"[+] Inverse transformed {len(existing_numerical)} numerical features via StandardScaler")
+                    except Exception as e:
+                        logger.warning(f"[!] StandardScaler inverse failed, skipping numerical inverse: {e}")
                 elif numerical_inverse == 'minmax' and 'numerical_minmax' in self.encoders:
                     scaler = self.encoders['numerical_minmax']
                     try:
@@ -571,6 +495,22 @@ class CIC2018Preprocessor(Preprocessor):
                 # Convert to binary using threshold 0.5
                 df_inverse[feature] = (df_inverse[feature] > 0.5).astype(int)
                 logger.debug(f"[+] Fixed binary feature {feature}: converted to 0/1")
+        
+        # 4b. Clamp tiny numerical magnitudes and enforce non-negativity on numerical features
+        try:
+            epsilon = 1e-9
+            num_cols_present = [col for col in self.cont_features if col in df_inverse.columns]
+            if num_cols_present:
+                # Set |x| < epsilon to 0 and negatives to 0
+                df_inverse[num_cols_present] = df_inverse[num_cols_present].mask(df_inverse[num_cols_present].abs() < epsilon, 0.0)
+                df_inverse[num_cols_present] = df_inverse[num_cols_present].mask(df_inverse[num_cols_present] < 0, 0.0)
+                logger.debug(f"[+] Clamped tiny and negative values to 0 for {len(num_cols_present)} numerical features")
+                # Soft rounding to reduce floating noise without being too strict
+                rounding_decimals = 8
+                df_inverse[num_cols_present] = df_inverse[num_cols_present].round(rounding_decimals)
+                logger.debug(f"[+] Rounded numerical features to {rounding_decimals} decimals")
+        except Exception as e:
+            logger.warning(f"[!] Failed to clamp tiny/negative numerical values: {e}")
         
         # 5. Reorder columns to match original order
         original_order = self.features + [self.label_column]

@@ -13,58 +13,7 @@ from eval.postfilter import PostFilterClassifier
 logger = get_logger(__name__)
 
 
-def encode_with_preprocessor(pre, df: pd.DataFrame) -> pd.DataFrame:
-    df_enc = pre.preprocess_encode_numerical_features(df.copy())
-    df_enc = pre.preprocess_encode_binary_features(df_enc)
-    df_enc = pre.preprocess_encode_label(df_enc)
-    df_enc = pre.preprocess_encode_categorical_features(df_enc)
-    return df_enc
-
-
-def ensure_encoded_with_autodetect(pre, df: Optional[pd.DataFrame]) -> pd.DataFrame:
-    """Return an encoded dataframe. If input already looks encoded (all non-Label
-    columns numeric and Label is numeric), skip encoding. Otherwise, encode.
-
-    This keeps the pipeline generic across datasets while allowing callers to
-    pass pre-encoded inputs.
-    """
-    if df is None:
-        return pd.DataFrame()
-    if len(df) == 0:
-        return df
-
-    label_col = 'Label'
-    has_label = label_col in df.columns
-    non_label_cols = [c for c in df.columns if c != label_col]
-
-    # Detect numeric label
-    label_is_numeric = False
-    if has_label:
-        try:
-            from pandas.api import types as ptypes
-            label_is_numeric = ptypes.is_integer_dtype(df[label_col]) or ptypes.is_float_dtype(df[label_col])
-        except Exception:
-            label_is_numeric = False
-
-    # Detect any non-numeric feature
-    non_numeric_present = False
-    try:
-        from pandas.api import types as ptypes
-        non_numeric_present = any(not ptypes.is_numeric_dtype(df[c]) for c in non_label_cols)
-    except Exception:
-        # Conservative: assume needs encoding
-        non_numeric_present = True
-
-    # If looks already encoded, just coerce features to float if needed
-    if (not non_numeric_present) and (not has_label or label_is_numeric):
-        df_num = df.copy()
-        for c in non_label_cols:
-            if not isinstance(df_num[c].dtype, (float,)):
-                df_num[c] = pd.to_numeric(df_num[c], errors='coerce')
-        return df_num
-
-    # Otherwise, encode using preprocessor
-    return encode_with_preprocessor(pre, df)
+## NOTE: The pipeline now expects inputs already encoded. No auto-detect or re-encode.
 
 
 def build_encoded_keys(df_enc: pd.DataFrame, feat_cols: Iterable[str], decimals: int = 6) -> set:
@@ -80,23 +29,24 @@ def train_wgan_with_critic(encoded_train: pd.DataFrame,
                            use_gp: bool = True,
                            critic_epochs: int = 60,
                            wgan_iterations: int = 10000,
-                           d_iter: int = 5) -> WGAN:
+                           d_iter: int = 5,
+                           critic_id: Optional[int] = None) -> WGAN:
     x_dim = len(list(feat_cols))
     wgan = WGAN(x_dim=x_dim, device=device, use_gp=use_gp, use_critic_loss=True, lambda_critic=0.5)
 
-    # Critic train set
+    # Critic train set (no internal sampling; expect pre-sampled opposite set)
     if benign_encoded is not None and not benign_encoded.empty:
         pos = encoded_train.copy()
-        neg = benign_encoded.sample(n=max(len(pos) * 4, 1), replace=True, random_state=1)
+        neg = benign_encoded.copy()
         critic_df = pd.concat([pos, neg], ignore_index=True).sample(frac=1, random_state=1)
-        logger.info(f"[+] Critic set: pos={len(pos)}, neg={len(neg)}")
+        logger.info(f"[+] Critic set: pos={len(pos)}, neg={len(neg)} (no internal sampling)")
     else:
         critic_df = encoded_train.copy()
 
-    critic_loader, _ = wgan.prepare_data(critic_df, use_label_column=True)
+    critic_loader, _ = wgan.prepare_data(critic_df, use_label_column=True, critic_id=critic_id)
     wgan.train_critic(critic_loader, epochs=critic_epochs)
 
-    attack_loader, _ = wgan.prepare_data(encoded_train, use_label_column=False)
+    attack_loader, _ = wgan.prepare_data(encoded_train, use_label_column=False, critic_id=critic_id)
     wgan.train_wgan(attack_loader, iterations=wgan_iterations, d_iter=d_iter, save_interval=1000)
     return wgan
 
@@ -128,14 +78,14 @@ class AugmentOptions:
 def _build_critic_df(encoded_train: pd.DataFrame, benign_encoded: Optional[pd.DataFrame]) -> pd.DataFrame:
     if benign_encoded is not None and not benign_encoded.empty:
         pos = encoded_train.copy()
-        neg = benign_encoded.sample(n=max(len(pos) * 4, 1), replace=True, random_state=1)
+        neg = benign_encoded.copy()
         return pd.concat([pos, neg], ignore_index=True).sample(frac=1, random_state=1)
     return encoded_train.copy()
 
 
 def _train_postfilter(pos_X: pd.DataFrame, benign_X: Optional[pd.DataFrame], min_precision: float) -> PostFilterClassifier:
     if benign_X is None or benign_X.empty:
-        benign_X = pos_X.sample(n=len(pos_X), replace=True, random_state=2)
+        benign_X = pos_X.copy()
     pos_y = np.ones(len(pos_X), dtype=np.int32)
     neg_y = np.zeros(len(benign_X), dtype=np.int32)
     X_all = pd.concat([pos_X, benign_X], ignore_index=True)
@@ -194,9 +144,9 @@ def _final_fill(pre,
                 accept_rate: float) -> pd.DataFrame:
     pos_X = enc_train.drop(columns=['Label'])
     if benign_enc is not None and not benign_enc.empty:
-        neg_X = benign_enc.drop(columns=['Label']).sample(n=min(len(pos_X)*4, len(benign_enc)), replace=True, random_state=7)
+        neg_X = benign_enc.drop(columns=['Label']).copy()
     else:
-        neg_X = pos_X.sample(n=len(pos_X), replace=True, random_state=7)
+        neg_X = pos_X.copy()
     from sklearn.model_selection import train_test_split
     X_all = pd.concat([pos_X, neg_X], ignore_index=True)
     y_all = np.concatenate([np.ones(len(pos_X), dtype=np.int32), np.zeros(len(neg_X), dtype=np.int32)])
@@ -226,6 +176,7 @@ def generate_augmented_samples(pre,
                                accept_rate: float = 0.2,
                                min_precision: float = 0.95,
                                options: Optional[AugmentOptions] = None,
+                               critic_id: Optional[int] = None,
                                dataset_name: str = "cic2018",
                                save_losses: bool = True,
                                save_models: bool = False) -> pd.DataFrame:
@@ -241,9 +192,9 @@ def generate_augmented_samples(pre,
         logger.info(f"[+] {class_name} already >= tau")
         return train_df
 
-    # Encode (auto-detect); if inputs are already encoded, skip re-encoding
-    enc_train = ensure_encoded_with_autodetect(pre, train_df)
-    enc_test = ensure_encoded_with_autodetect(pre, test_df)
+    # Expect pre-encoded inputs; use as-is
+    enc_train = train_df.copy()
+    enc_test = test_df.copy()
     feat_cols = [c for c in enc_train.columns if c != 'Label']
 
     # Load benign encoded (optional)
@@ -254,6 +205,7 @@ def generate_augmented_samples(pre,
         enc_train, feat_cols, pre, benign_enc, device=device,
         use_gp=opts.use_gp, critic_epochs=opts.critic_epochs,
         wgan_iterations=opts.wgan_iterations, d_iter=opts.d_iter,
+        critic_id=critic_id,
     )
 
     # Save artifacts

@@ -37,7 +37,7 @@ def main():
                         choices=cic2018.MAJORITY_LABELS + cic2018.MINORITY_LABELS,
                         help='Labels to sample when mode=label')
     parser.add_argument('--seed', type=int, default=42, help='Random seed for sampling')
-    parser.add_argument('--out', type=str, default=os.path.join(DATA_FOLDER, 'cic2018_test_random_sample_clean_merged.csv'),
+    parser.add_argument('--out', type=str, default=None,
                         help='Output CSV path for the combined sample')
     parser.add_argument('--log-level', type=str, default='INFO', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'])
     args = parser.parse_args()
@@ -83,9 +83,14 @@ def main():
         logger.error("[!] No rows sampled; nothing to write")
         return
 
-    os.makedirs(os.path.dirname(args.out), exist_ok=True)
-    out_df.to_csv(args.out, index=False)
-    logger.info(f"[+] Saved combined TEST random sample => {args.out} (rows={len(out_df)})")
+    if args.out is None:
+        out_path = os.path.join(DATA_FOLDER, f'cic2018_test_random_sample_clean_merged_{args.tau}.csv')
+    else:
+        out_path = args.out
+
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    out_df.to_csv(out_path, index=False)
+    logger.info(f"[+] Saved combined TEST random sample => {out_path} (rows={len(out_df)})")
     logger.info(f"[+] Totals: before={total_before}, after={total_after}")
 
 

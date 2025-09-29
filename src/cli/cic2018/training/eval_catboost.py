@@ -5,7 +5,8 @@ import pandas as pd
 import numpy as np
 
 from utils.logging import setup_logging, get_logger
-from configs import cic2018
+import configs.cic2018 as cic2018
+from preprocessing.cic2018_preprocessor import CIC2018Preprocessor
 
 
 logger = get_logger(__name__)
@@ -56,7 +57,7 @@ def main():
 
     # Cast categorical columns to int (consistent with training)
     
-    cat_cols = [c for c in (args.cat_cols or ['Protocol', 'RST Flag Cnt', 'PSH Flag Cnt', 'ACK Flag Cnt', 'ECE Flag Cnt']) if c in X.columns]
+    cat_cols = [c for c in (args.cat_cols or ['RST Flag Cnt', 'PSH Flag Cnt', 'ACK Flag Cnt', 'ECE Flag Cnt']) if c in X.columns]
     for c in cat_cols:
         X[c] = pd.to_numeric(X[c], errors='coerce').fillna(-1).astype(np.int32)
     cat_idx = [X.columns.get_loc(c) for c in cat_cols]
@@ -75,14 +76,29 @@ def main():
     report = classification_report(y, y_pred, output_dict=True)
     cm = confusion_matrix(y, y_pred)
 
-    # Log CM
+    # Log CM (with inverse label names if available)
     logger.info("Confusion matrix (rows=true, cols=pred):")
-    labels_sorted = sorted(np.unique(np.concatenate([y.values, np.array(y_pred)])))
-    header = "labels," + ",".join(map(str, labels_sorted))
-    logger.info(header)
-    cm_mat = confusion_matrix(y, y_pred, labels=labels_sorted)
-    for i, row in enumerate(cm_mat):
-        logger.info(f"{labels_sorted[i]}," + ",".join(str(int(x)) for x in row))
+    try:
+        pre = CIC2018Preprocessor()
+        if not pre.load_encoders():
+            raise RuntimeError("encoders not found")
+        le = pre.encoders.get('label')
+        y_orig = le.inverse_transform(np.asarray(y))
+        y_pred_orig = le.inverse_transform(np.asarray(y_pred, dtype=type(y.iloc[0]) if hasattr(y, 'iloc') else int))
+        labels_sorted = sorted(np.unique(np.concatenate([y_orig, y_pred_orig])))
+        header = "labels," + ",".join(map(str, labels_sorted))
+        logger.info(header)
+        cm_mat = confusion_matrix(y_orig, y_pred_orig, labels=labels_sorted)
+        for i, row in enumerate(cm_mat):
+            logger.info(f"{labels_sorted[i]}," + ",".join(str(int(x)) for x in row))
+    except Exception as e:
+        logger.warning(f"[!] Could not inverse-transform labels for CM, falling back to numeric: {e}")
+        labels_sorted = sorted(np.unique(np.concatenate([y.values, np.array(y_pred)])))
+        header = "labels," + ",".join(map(str, labels_sorted))
+        logger.info(header)
+        cm_mat = confusion_matrix(y, y_pred, labels=labels_sorted)
+        for i, row in enumerate(cm_mat):
+            logger.info(f"{labels_sorted[i]}," + ",".join(str(int(x)) for x in row))
 
     # Save metrics
     os.makedirs(os.path.dirname(args.report_out), exist_ok=True)
@@ -118,6 +134,7 @@ def main():
 
 
 if __name__ == "__main__":
+    # print("Starting evaluation...")
     main()
 
 

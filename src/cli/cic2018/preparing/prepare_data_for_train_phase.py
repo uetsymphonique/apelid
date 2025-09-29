@@ -66,6 +66,18 @@ def main():
     for col in cat_feats:
         if col in merged.columns:
             logger.info(f"{col}: {merged[col].nunique()} unique; min={merged[col].min()}, max={merged[col].max()}")
+            
+    # Label distribution (original label names)
+    try:
+        le = pre.encoders.get('label')
+        if le is not None and 'Label' in train_df_mapped.columns:
+            labels_str = le.inverse_transform(train_df_mapped['Label'].values)
+            vc = pd.Series(labels_str).value_counts()
+            logger.info("label distribution (original names):")
+            for name, cnt in vc.items():
+                logger.info(f"  - {name}: {int(cnt)}")
+    except Exception as e:
+        logger.warning(f"[!] Could not log label distribution (original names): {e}")
 
     # Export
     train_df_mapped.to_csv(OUT_TRAIN, index=False)

@@ -148,8 +148,11 @@ def merge_csv_files_with_early_cleaning(
             chunk = preprocessor.remove_missing_and_inf_values(chunk)
 
 
-            # Drop rows with any negative numeric values, ignoring sentinel Init windows in preprocessor override
-            chunk = preprocessor.remove_negative_numeric_rows(chunk, ignore_sentinel_cols=ignore_sentinel_cols)
+            # Drop rows with any negative numeric values
+            chunk = preprocessor.remove_negative_numeric_rows(chunk)
+
+            # Drop rows with many zeros in continuous features (>=50% of cont_features == 0)
+            chunk = preprocessor.drop_rows_with_zero_heavy_continuous(chunk, threshold_frac=0.5)
 
             # Drop duplicates (intra-chunk)
             chunk = preprocessor.fix_duplicates(chunk)

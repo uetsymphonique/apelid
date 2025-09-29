@@ -1,0 +1,15 @@
+label,total_rows,rows_zero_gte_28,rows_zero_gte_40
+benign,8037443,2217095,1408373
+bot,144277,1349,1263
+brute_force_-web,406,140,136
+brute_force_-xss,223,111,110
+ddos_attack-hoic,198861,35111,35111
+ddos_attacks-loic-http,574215,284926,33876
+dos_attacks-goldeneye,41392,13621,7043
+dos_attacks-hulk,145199,119651,119651
+dos_attacks-slowhttptest,55,55,55
+dos_attacks-slowloris,9712,2311,2283
+ftp-bruteforce,53,53,53
+infilteration,94859,43848,36500
+sql_injection,84,36,26
+ssh-bruteforce,94045,227,49

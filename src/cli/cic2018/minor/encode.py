@@ -5,6 +5,7 @@ import pandas as pd
 from utils.logging import setup_logging, get_logger
 from configs import cic2018
 from preprocessing.cic2018_preprocessor import CIC2018Preprocessor
+from argparsers.baseparser import BaseParser
 
 
 logger = get_logger(__name__)
@@ -41,11 +42,11 @@ def _select_label_files(input_dir: str, allowed_safe_labels: set[str], subset: s
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Encode per-label datasets for MINORITY classes (no PCA/UMAP): one-hot + MinMax/Quantile")
+    parser = BaseParser(description="Encode per-label datasets for MINORITY classes (no PCA/UMAP): one-hot + Standard/MinMax/Quantile")
     parser.add_argument('--input-dir', type=str, default=CLEAN_MERGED_DIR,
                         help='Input directory containing per-label clean merged CSVs')
-    parser.add_argument('--num-encoder', '-n', type=str, default='quantile_uniform', choices=['minmax', 'quantile_uniform'],
-                        help='Numerical encoder to use for minority encoding')
+    parser.add_argument('--num-encoder', '-n', type=str, default='quantile_uniform', choices=['quantile_normal', 'standard', 'quantile_uniform'],
+                        help='Numerical encoder to use for minority encoding')  
     parser.add_argument('--subset', type=str, default='full', choices=['full', 'train', 'test'],
                         help="Which subset of clean-merged to encode: full (unsplit), train or test")
     parser.add_argument('--mode', '-m', type=str, default='all', choices=['all', 'label'],
@@ -54,11 +55,6 @@ def main():
                         help='List of label names to encode when mode=label')
     parser.add_argument('--exclude-labels', '-x', type=str, nargs='+', default=None, choices=cic2018.MINORITY_LABELS,
                         help='Labels to exclude from encoding (applied after --mode/--labels)')
-    parser.add_argument('--precheck', action='store_true', help='Precheck for duplicates')
-    parser.add_argument('--postcheck', action='store_true', help='Postcheck for duplicates')
-    parser.add_argument('--sentinel-impute', type=str, default='none', choices=['median', 'zero', 'none'],
-                        help='Handle -1 sentinel in Init Fwd/Bwd Win Byts before scaling (default zero; options: median/zero/none) with indicator columns')
-    parser.add_argument('--log-level', type=str, default='INFO', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'])
     args = parser.parse_args()
     setup_logging(args.log_level)
 
@@ -121,18 +117,21 @@ def main():
 
             df_label = pd.read_csv(lf, low_memory=False)
 
-            # Handle sentinel -1 columns before scaling (adds *_is_missing)
-            if args.sentinel_impute != 'none':
-                fill_val = 0.0 if args.sentinel_impute == 'zero' else 0.0
-                df_label = preprocessor.add_sentinel_indicators_and_impute_init_win_bytes(
-                    df_label, strategy='median' if args.sentinel_impute == 'median' else 'fixed', fill_value=fill_val
-                )
+            df_label = preprocessor.select_features_and_label(df_label)
+            # df_label = preprocessor.coerce_feature_dtypes(df_label)
+
+            # Drop any negative numeric rows before scaling
+            # df_label = preprocessor.remove_negative_numeric_rows(df_label)
 
             # Numerical encode (minmax or quantile_uniform)
-            if args.num_encoder == 'quantile_uniform':
+            if args.num_encoder == 'quantile_normal':
+                enc_df = preprocessor.preprocess_encode_numerical_features_quantile(df_label.copy())
+            elif args.num_encoder == 'standard':
+                enc_df = preprocessor.preprocess_encode_numerical_features_standard(df_label.copy())
+            elif args.num_encoder == 'quantile_uniform':
                 enc_df = preprocessor.preprocess_encode_numerical_features_quantile_uniform(df_label.copy())
             else:
-                enc_df = preprocessor.preprocess_encode_numerical_features(df_label.copy())
+                raise ValueError(f"Invalid numerical encoder: {args.num_encoder}")
 
             # Binary and label/categorical encoding (one-hot/ordinal as configured)
             enc_df = preprocessor.preprocess_encode_binary_features(enc_df)

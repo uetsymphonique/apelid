@@ -34,7 +34,7 @@ def main():
                         help='Decode all minority labels or a provided list')
     parser.add_argument('--labels', '-c', type=str, nargs='+', default=None, choices=cic2018.MINORITY_LABELS,
                         help='List of labels to decode when mode=label')
-    parser.add_argument('--numerical-inverse', type=str, default='quantile_uniform', choices=['quantile_uniform', 'minmax'],
+    parser.add_argument('--numerical-inverse', type=str, default='quantile_uniform', choices=['quantile_normal', 'standard', 'quantile_uniform', 'minmax'],
                         help='Method to inverse transform numerical features')
     parser.add_argument('--input-dir', type=str, default=None,
                         help='Override input directory (defaults to encoded/train)')
