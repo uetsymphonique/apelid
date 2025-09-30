@@ -1,0 +1,218 @@
+import os
+import argparse
+import pandas as pd
+import numpy as np
+
+from utils.logging import setup_logging, get_logger
+from configs import cic2018
+from preprocessing.cic2018_preprocessor import CIC2018Preprocessor
+from argparsers.baseparser import BaseParser
+
+
+logger = get_logger(__name__)
+
+
+ENCODED_DIR = cic2018.ENCODED_DATA_FOLDER
+CLEAN_MERGED_DIR = cic2018.CLEAN_MERGED_DATA_FOLDER
+RAW_DIR = cic2018.RAW_PROCESSED_DATA_FOLDER
+
+
+def deduplicate_dataframe(df: pd.DataFrame, stage_name: str = "",
+                          preprocessor: CIC2018Preprocessor | None = None) -> pd.DataFrame:
+    """
+    Remove duplicates from dataframe using preprocessor's duplicate handling utilities.
+    """
+    logger.info(f"[+] Deduplicating {stage_name} data...")
+    if preprocessor is None:
+        return df.drop_duplicates()
+
+    # Exclude technical columns from duplicate key
+    tech_cols = [c for c in ['__rowid__', '__subset__'] if c in df.columns]
+    df_key = df.drop(columns=tech_cols) if tech_cols else df
+    has_duplicates = preprocessor.check_duplicates(df_key)
+    if has_duplicates:
+        before_dedup = len(df)
+        duplicate_count = df_key.duplicated().sum()
+        logger.info(f"[+] Found {duplicate_count} duplicates in {stage_name} data")
+        # Run dedup on key columns then align to original df
+        df_clean = df_key.drop_duplicates().copy()
+        # Re-attach technical columns by index alignment if needed
+        for c in tech_cols:
+            if c in df.columns and c not in df_clean.columns:
+                df_clean[c] = df.loc[df_clean.index, c]
+        after_dedup = len(df_clean)
+        duplicates_removed = before_dedup - after_dedup
+
+        logger.info(f"[+] {stage_name} deduplication: {duplicates_removed} duplicates removed")
+        logger.info(f"[+] Final {stage_name} shape: {df_clean.shape}")
+        return df_clean
+    else:
+        logger.info(f"[+] No duplicates found in {stage_name} data")
+        return df
+
+
+def _select_label_files(input_dir: str, allowed_safe_labels: set[str], subset: str) -> list[str]:
+    """Return paths to per-label clean merged CSVs filtered by allowed safe labels and subset."""
+    files: list[str] = []
+    if subset == 'full':
+        scan_dir = input_dir
+        suffix = '_clean_merged.csv'
+    else:
+        scan_dir = os.path.join(input_dir, subset)
+        suffix = f'_{subset}_clean_merged.csv'
+
+    if not os.path.isdir(scan_dir):
+        return []
+
+    for fname in sorted(os.listdir(scan_dir)):
+        if not fname.endswith(suffix):
+            continue
+        base = fname
+        if not base.startswith('cic2018_'):
+            continue
+        label_safe = base[len('cic2018_'):-len(suffix)]
+        if label_safe in allowed_safe_labels:
+            files.append(os.path.join(scan_dir, fname))
+    return files
+
+
+def main():
+    parser = BaseParser(description="Encode per-label datasets for MAJORITY classes (select all or specific labels), no inverse/raw export")
+    parser.add_argument('--input-dir', type=str, default=CLEAN_MERGED_DIR,
+                        help='Input directory containing per-label clean merged CSVs')
+    parser.add_argument('--num-encoder', '-n', type=str, default='standard', choices=['standard'],
+                        help='Numerical encoder to use for majority encoding')
+    parser.add_argument('--subset', type=str, default='full', choices=['full', 'train', 'test'],
+                        help="Which subset of clean-merged to encode: full (unsplit), train or test")
+    parser.add_argument('--mode', '-m', type=str, default='all', choices=['all', 'label'],
+                        help='Encode all majority labels or a provided list')
+    parser.add_argument('--labels', '-c', type=str, nargs='+', default=None, choices=cic2018.MAJORITY_LABELS,
+                        help='List of label names to encode when mode=label')
+    parser.add_argument('--exclude-labels', '-x', type=str, nargs='+', default=None, choices=cic2018.MAJORITY_LABELS,
+                        help='Labels to exclude from encoding (applied after --mode/--labels)')
+    args = parser.parse_args()
+    setup_logging(args.log_level)
+
+    input_dir = args.input_dir
+    if not os.path.isdir(input_dir):
+        raise SystemExit(f"Input directory not found: {input_dir}")
+
+    logger.info("===========================================")
+    logger.info("MAJORITY ENCODING PIPELINE STARTED")
+    logger.info("===========================================")
+    logger.info(f"[+] Numerical encoder: {args.num_encoder}; subset={args.subset}")
+
+    # Resolve target labels
+    if args.mode == 'label':
+        if not args.labels:
+            raise SystemExit("--labels is required when --mode label")
+        target_labels = args.labels
+    else:
+        target_labels = cic2018.MAJORITY_LABELS
+
+    # Apply excludes if provided
+    if args.exclude_labels:
+        excludes = set(args.exclude_labels)
+        target_labels = [lbl for lbl in target_labels if lbl not in excludes]
+        logger.info(f"[+] Excluding labels: {sorted(excludes)}")
+
+    if not target_labels:
+        raise SystemExit("No labels to encode after applying excludes.")
+
+    logger.info(f"[+] Target labels: {target_labels}")
+
+    allowed_safe = {cic2018.get_label_name(lbl) for lbl in target_labels}
+
+    preprocessor = CIC2018Preprocessor()
+    if not preprocessor.load_encoders():
+        raise SystemExit("Encoders not found. Fit encoders on TRAIN first: python -m cli.cic2018.preprocessing.setup_encoders")
+
+    def process_subset(subset: str):
+        label_files = _select_label_files(input_dir, allowed_safe, subset)
+        if not label_files:
+            logger.info(f"[+] Skip subset={subset}: no files found")
+            return
+
+        # Resolve output directories based on subset
+        if subset == 'full':
+            encoded_out_dir = ENCODED_DIR
+        else:
+            encoded_out_dir = os.path.join(ENCODED_DIR, subset)
+        os.makedirs(encoded_out_dir, exist_ok=True)
+
+        logger.info(f"[+] Found {len(label_files)} majority label files (subset={subset})")
+        logger.info("[+] Encoding and exporting MAJORITY per-label datasets (encoded only)...")
+        encoded_counts: dict[str, int] = {}
+
+        for lf in label_files:
+            base = os.path.basename(lf)
+            suffix = '_clean_merged.csv' if subset == 'full' else f'_{subset}_clean_merged.csv'
+            label_safe = base[len('cic2018_'):-len(suffix)]
+            logger.info(f"[+] Encoding {base} -> label={label_safe} (subset={subset})")
+
+            df_label = pd.read_csv(lf, low_memory=False)
+            # Assign stable row id within this clean_merged file
+            df_label['__rowid__'] = np.arange(len(df_label), dtype=np.int64)
+
+            df_label = preprocessor.select_features_and_label(df_label)
+            # Preserve row id after feature selection
+            df_label['__rowid__'] = df_label.index.to_series().map(lambda i: i).astype(np.int64)
+            # df_label = preprocessor.coerce_feature_dtypes(df_label)
+
+
+            # Drop any negative numeric rows before scaling
+            # df_label = preprocessor.remove_negative_numeric_rows(df_label)
+
+            # Numerical encode
+            if args.num_encoder == 'standard':
+                enc_df = preprocessor.preprocess_encode_numerical_features_standard(df_label.copy())
+
+            else:
+                raise ValueError(f"Invalid numerical encoder: {args.num_encoder}")
+
+            # Binary and label/categorical encoding
+            enc_df = preprocessor.preprocess_encode_binary_features(enc_df)
+            enc_df = preprocessor.preprocess_encode_label(enc_df)
+            enc_df = preprocessor.preprocess_encode_categorical_features(enc_df)
+            # Attach subset marker
+            enc_df['__subset__'] = subset
+
+            # Deduplicate encoded per-label
+            enc_df = deduplicate_dataframe(
+                enc_df,
+                stage_name=f"cic2018_{label_safe} (majority, encoded)",
+                preprocessor=preprocessor,
+            )
+
+            # Export encoded per-label
+            enc_fname = f"cic2018_{label_safe}_encoded.csv"
+            enc_path = os.path.join(encoded_out_dir, enc_fname)
+            preprocessor.export_encoded_data(enc_df, enc_path)
+            encoded_counts[label_safe] = len(enc_df)
+            logger.info(f"[+] Saved encoded: {enc_path} ({len(enc_df)})")
+
+
+        logger.info("===========================================")
+        logger.info(f"[+] MAJORITY ENCODING COMPLETED (subset={subset})")
+        logger.info("===========================================")
+        logger.info(f"[+] Encoded outputs -> {encoded_out_dir}")
+        if encoded_counts:
+            sample_items = list(encoded_counts.items())[:15]
+            logger.info("[+] Sample encoded counts:")
+            for name, cnt in sample_items:
+                logger.info(f"    {name}: {cnt}")
+            if len(encoded_counts) > 15:
+                logger.info(f"    ... and {len(encoded_counts) - 15} more labels")
+
+    # If subset=full, process both train and test sequentially when available
+    if args.subset == 'full':
+        for sub in ['train', 'test']:
+            process_subset(sub)
+    else:
+        process_subset(args.subset)
+
+
+if __name__ == "__main__":
+    main()
+
+

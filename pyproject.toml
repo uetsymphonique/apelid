@@ -3,9 +3,9 @@ requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sampling"
+name = "apelid"
 version = "0.1.0"
-description = "AWGAN implementation"
+description = "APELID implementation"
 authors = [
     {name = "Minh Quang Tran", email = "minhtran6464.lhp@gmail.com"}
 ]

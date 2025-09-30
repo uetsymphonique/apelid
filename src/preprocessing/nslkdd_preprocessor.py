@@ -1,7 +1,7 @@
 from preprocessing.preprocessor import Preprocessor
 import pandas as pd
 from utils.logging import get_logger, setup_logging
-from sklearn.preprocessing import OneHotEncoder, MinMaxScaler, OrdinalEncoder
+from sklearn.preprocessing import OneHotEncoder, MinMaxScaler, OrdinalEncoder, StandardScaler
 from sklearn.preprocessing import LabelEncoder
 import joblib
 
@@ -19,6 +19,17 @@ ACCESS_ATTACKS = ['ftp_write', 'guess_passwd', 'http_tunnel', 'imap',
 
 class NSLKDDPreprocessor(Preprocessor):
     def __init__(self):
+        self.nslkdd_columns = [
+            'duration', 'protocol_type', 'service', 'flag', 'src_bytes', 'dst_bytes', 
+            'land', 'wrong_fragment', 'urgent', 'hot', 'num_failed_logins', 'logged_in', 
+            'num_compromised', 'root_shell', 'su_attempted', 'num_root', 'num_file_creations', 
+            'num_shells', 'num_access_files', 'num_outbound_cmds', 'is_host_login', 'is_guest_login', 
+            'count', 'srv_count', 'serror_rate', 'srv_serror_rate', 'rerror_rate', 'srv_rerror_rate', 
+            'same_srv_rate', 'diff_srv_rate', 'srv_diff_host_rate', 'dst_host_count', 'dst_host_srv_count',
+            'dst_host_same_srv_rate', 'dst_host_diff_srv_rate', 'dst_host_same_src_port_rate', 
+            'dst_host_srv_diff_host_rate', 'dst_host_serror_rate', 'dst_host_srv_serror_rate', 
+            'dst_host_rerror_rate', 'dst_host_srv_rerror_rate', 'attack', 'level'
+        ]
         self.features = [
             'protocol_type', 'service', 'flag', 'land', 'logged_in', 'is_host_login', 'is_guest_login',
             'duration', 'src_bytes', 'dst_bytes', 'wrong_fragment', 'urgent', 'hot', 
@@ -35,7 +46,7 @@ class NSLKDDPreprocessor(Preprocessor):
         self.encoded_categorical_features = [
             'protocol_type', 'service', 'flag'
         ]
-        self.encoded_numerical_features = ['duration', 'src_bytes', 'dst_bytes', 'wrong_fragment', 'urgent', 'hot', 
+        self.cont_features = self.encoded_numerical_features = ['duration', 'src_bytes', 'dst_bytes', 'wrong_fragment', 'urgent', 'hot', 
             'num_failed_logins', 'num_compromised', 'root_shell', 'su_attempted', 
             'num_root', 'num_file_creations', 'num_shells', 'num_access_files', 
             'num_outbound_cmds', 'count', 'srv_count', 'serror_rate', 
@@ -72,15 +83,16 @@ class NSLKDDPreprocessor(Preprocessor):
     def setup_encoders(self, df: pd.DataFrame):
         self.encoders = {
             'categorical': OneHotEncoder(sparse_output=False, handle_unknown='ignore'),
-            'numerical': MinMaxScaler(),
+            'minmax': MinMaxScaler(),
             'label': LabelEncoder(),
-            'ordinal': OrdinalEncoder()
+            'ordinal': OrdinalEncoder(),
+            'standard': StandardScaler()
         }
         self.encoders['categorical'].fit(df[self.encoded_categorical_features])
-        self.encoders['numerical'].fit(df[self.encoded_numerical_features])
+        self.encoders['minmax'].fit(df[self.encoded_numerical_features])
+        self.encoders['standard'].fit(df[self.encoded_numerical_features])
         self.encoders['label'].fit(df[self.label_column])
         self.encoders['ordinal'].fit(df[self.encoded_categorical_features])
-        
 
     def load_encoders(self, encoders_dir=None):
         """Load pre-trained encoders from saved files"""
@@ -90,9 +102,10 @@ class NSLKDDPreprocessor(Preprocessor):
         try:
             self.encoders = {
                 'categorical': joblib.load(f"{encoders_dir}/categorical_encoder.pkl"),
-                'numerical': joblib.load(f"{encoders_dir}/numerical_encoder.pkl"),
+                'minmax': joblib.load(f"{encoders_dir}/minmax_encoder.pkl"),
                 'label': joblib.load(f"{encoders_dir}/label_encoder.pkl"),
-                'ordinal': joblib.load(f"{encoders_dir}/ordinal_encoder.pkl")
+                'ordinal': joblib.load(f"{encoders_dir}/ordinal_encoder.pkl"),
+                'standard': joblib.load(f"{encoders_dir}/standard_encoder.pkl")
             }
             logger.info(f"[+] Encoders loaded from {encoders_dir}")
             return True
@@ -115,9 +128,10 @@ class NSLKDDPreprocessor(Preprocessor):
         
         try:
             joblib.dump(self.encoders['categorical'], f"{encoders_dir}/categorical_encoder.pkl")
-            joblib.dump(self.encoders['numerical'], f"{encoders_dir}/numerical_encoder.pkl")
+            joblib.dump(self.encoders['minmax'], f"{encoders_dir}/minmax_encoder.pkl")
             joblib.dump(self.encoders['label'], f"{encoders_dir}/label_encoder.pkl")
             joblib.dump(self.encoders['ordinal'], f"{encoders_dir}/ordinal_encoder.pkl")
+            joblib.dump(self.encoders['standard'], f"{encoders_dir}/standard_encoder.pkl")
             logger.info(f"[+] Encoders saved to {encoders_dir}")
             return True
         except Exception as e:
@@ -139,8 +153,13 @@ class NSLKDDPreprocessor(Preprocessor):
         df = df.drop(columns=self.encoded_categorical_features)
         return df
 
-    def preprocess_encode_numerical_features(self, df: pd.DataFrame):
-        scaler = self.encoders['numerical']
+    def preprocess_encode_numerical_features_minmax(self, df: pd.DataFrame):
+        scaler = self.encoders['minmax']
+        df[self.encoded_numerical_features] = scaler.transform(df[self.encoded_numerical_features])
+        return df
+
+    def preprocess_encode_numerical_features_standard(self, df: pd.DataFrame):
+        scaler = self.encoders['standard']
         df[self.encoded_numerical_features] = scaler.transform(df[self.encoded_numerical_features])
         return df
 
@@ -169,7 +188,7 @@ class NSLKDDPreprocessor(Preprocessor):
         df[self.label_column] = encoder.transform(df[self.label_column])
         return df
 
-    def inverse_transform(self, df: pd.DataFrame):
+    def inverse_transform(self, df: pd.DataFrame, numerical_inverse: str = 'minmax'):
         """
         Inverse transform the encoded DataFrame back to original format
         """
@@ -199,25 +218,18 @@ class NSLKDDPreprocessor(Preprocessor):
                 logger.debug(f"[+] Inverse transformed categorical features")
         
         # 2. Inverse transform numerical features (scaled -> original values)
-        if 'numerical' in self.encoders:
-            scaler = self.encoders['numerical']
-            numerical_features = ['duration', 'src_bytes', 'dst_bytes', 'wrong_fragment', 'urgent', 'hot', 
-            'num_failed_logins', 'num_compromised', 'root_shell', 'su_attempted', 
-            'num_root', 'num_file_creations', 'num_shells', 'num_access_files', 
-            'num_outbound_cmds', 'count', 'srv_count', 'serror_rate', 
-            'srv_serror_rate', 'rerror_rate', 'srv_rerror_rate', 'same_srv_rate', 
-            'diff_srv_rate', 'srv_diff_host_rate', 'dst_host_count', 'dst_host_srv_count', 
-            'dst_host_same_srv_rate', 'dst_host_diff_srv_rate', 
-            'dst_host_same_src_port_rate', 'dst_host_srv_diff_host_rate', 
-            'dst_host_serror_rate', 'dst_host_srv_serror_rate', 'dst_host_rerror_rate', 
-                'dst_host_srv_rerror_rate']
-            
-            # Find which numerical features exist in current df
-            existing_numerical = [col for col in numerical_features if col in df_inverse.columns]
-            
+        # Find which numerical features exist in current df
+        existing_numerical = [col for col in self.encoded_numerical_features if col in df_inverse.columns]
+        if numerical_inverse == 'minmax' and 'minmax' in self.encoders:
+            scaler = self.encoders['minmax']
             if existing_numerical:
                 df_inverse[existing_numerical] = scaler.inverse_transform(df_inverse[existing_numerical])
-                logger.debug(f"[+] Inverse transformed {len(existing_numerical)} numerical features")
+                logger.debug(f"[+] Inverse transformed {len(existing_numerical)} numerical features via MinMaxScaler")
+        elif numerical_inverse == 'standard' and 'standard' in self.encoders:
+            scaler = self.encoders['standard']
+            if existing_numerical:
+                df_inverse[existing_numerical] = scaler.inverse_transform(df_inverse[existing_numerical])
+                logger.debug(f"[+] Inverse transformed {len(existing_numerical)} numerical features via StandardScaler")
         
         # 3. Inverse transform labels (encoded -> original strings)
         if 'label' in self.encoders and self.label_column in df_inverse.columns:
@@ -233,19 +245,7 @@ class NSLKDDPreprocessor(Preprocessor):
                 logger.debug(f"[+] Fixed binary feature {feature}: converted to 0/1")
         
         # 5. Reorder columns to match original order
-        original_order = [
-            'protocol_type', 'service', 'flag', 'land', 'logged_in', 'is_host_login', 'is_guest_login',
-            'duration', 'src_bytes', 'dst_bytes', 'wrong_fragment', 'urgent', 'hot', 
-            'num_failed_logins', 'num_compromised', 'root_shell', 'su_attempted', 
-            'num_root', 'num_file_creations', 'num_shells', 'num_access_files', 
-            'num_outbound_cmds', 'count', 'srv_count', 'serror_rate', 
-            'srv_serror_rate', 'rerror_rate', 'srv_rerror_rate', 'same_srv_rate', 
-            'diff_srv_rate', 'srv_diff_host_rate', 'dst_host_count', 'dst_host_srv_count', 
-            'dst_host_same_srv_rate', 'dst_host_diff_srv_rate', 
-            'dst_host_same_src_port_rate', 'dst_host_srv_diff_host_rate', 
-            'dst_host_serror_rate', 'dst_host_srv_serror_rate', 'dst_host_rerror_rate', 
-            'dst_host_srv_rerror_rate', self.label_column
-        ]
+        original_order = self.features + [self.label_column]
         
         # Only keep columns that exist
         existing_columns = [col for col in original_order if col in df_inverse.columns]

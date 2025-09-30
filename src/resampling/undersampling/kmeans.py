@@ -43,7 +43,7 @@ class KMeansCompressor:
         kmeans = MiniBatchKMeans(
             n_clusters=n_clusters, 
             random_state=self.random_state, 
-            batch_size=1000,
+            batch_size=100000,
             verbose=0,
             max_iter=100
         )

@@ -14,11 +14,11 @@ class Preprocessor:
         self.binary_features = []
         self.encoders = {}
 
-    
-    def dump_encoders(self):
-        for key, encoder in self.encoders.items():
-            joblib.dump(encoder, f'encoders/{key}_encoder.pkl')
-            logger.info(f"[+] Saved {key} encoder to encoders/{key}_encoder.pkl")
+    def info_dataset(self, df: pd.DataFrame):
+        logger.info(f"[+] Dataset shape: {df.shape}")
+        logger.info(f"[+] Dataset columns: {df.columns.tolist()}")
+        logger.info(f"[+] Dataset label distribution:")
+        logger.info(df[self.label_column].value_counts())
 
     def remove_missing_and_inf_values(self, df: pd.DataFrame) -> pd.DataFrame:
         """Replace infinite values with NaN and drop all rows containing NaN or infinite values"""
