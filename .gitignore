@@ -1,14 +1,14 @@
-.pyc
+*.pyc
+data/cic2018_merged_train_raw_processed.csv
 venv/
 __pycache__/
 old_codes/
 *.egg-info/
 .conda/
-DABEL/
 models/
-scripts_not_used/
 approx_*
 .vscode/
 catboost_info/
 encoders/cic2018/umap_major.pkl
 build/
+apelid_ath/

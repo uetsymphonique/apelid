@@ -1,0 +1,20 @@
+{
+  "accuracy": 0.9406228248040432,
+  "f1_macro": 0.8762053616082673,
+  "precision_macro": 0.8715141477941576,
+  "recall_macro": 0.8964848154404521,
+  "classes": [
+    "Benign",
+    "Bot",
+    "Brute Force -Web",
+    "Brute Force -XSS",
+    "DDOS attack-HOIC",
+    "DDoS attacks-LOIC-HTTP",
+    "DoS attacks-GoldenEye",
+    "DoS attacks-Hulk",
+    "DoS attacks-Slowloris",
+    "Infilteration",
+    "SQL Injection",
+    "SSH-Bruteforce"
+  ]
+}

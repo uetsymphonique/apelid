@@ -100,3 +100,78 @@ class KMeansRepresentativeSelector:
             add_idx = rng.choice(candidates, size=add_count, replace=False)
             return np.concatenate([indices, add_idx.astype(np.int64)])
         return indices
+
+    # -------------------- Workflow helpers --------------------
+    @staticmethod
+    def compute_dist_to_center(X: np.ndarray, labels: np.ndarray, centers: np.ndarray) -> np.ndarray:
+        """Compute L2 distance to assigned cluster center for each sample."""
+        dist = np.empty(len(X), dtype=np.float32)
+        for c in range(centers.shape[0]):
+            idx = np.where(labels == c)[0]
+            if idx.size == 0:
+                continue
+            diff = X[idx] - centers[c]
+            d2 = np.einsum('ij,ij->i', diff, diff)
+            dist[idx] = np.sqrt(d2).astype(np.float32, copy=False)
+        return dist
+
+    @staticmethod
+    def select_edges_per_cluster(dist_center: np.ndarray, labels: np.ndarray, percentile: float) -> dict[int, np.ndarray]:
+        """Return per-cluster indices whose distance is in the top percentile."""
+        edge_dict: dict[int, np.ndarray] = {}
+        unique_clusters = np.unique(labels)
+        for c in unique_clusters:
+            idx = np.where(labels == c)[0]
+            if idx.size == 0:
+                continue
+            thr = np.percentile(dist_center[idx], percentile)
+            edge_idx = idx[dist_center[idx] >= thr]
+            edge_dict[int(c)] = edge_idx
+        return edge_dict
+
+    @staticmethod
+    def distribute_edges(edge_dict: dict[int, np.ndarray], need: int) -> np.ndarray:
+        """Select up to `need` edge indices, proportionally then round-robin across clusters."""
+        if need <= 0 or not edge_dict:
+            return np.array([], dtype=np.int64)
+        total_edges = int(sum(len(v) for v in edge_dict.values()))
+        if total_edges == 0:
+            return np.array([], dtype=np.int64)
+
+        chosen: list[int] = []
+        # proportional pass
+        for c, v in edge_dict.items():
+            if len(v) == 0:
+                continue
+            quota = int(round(need * (len(v) / total_edges)))
+            take = min(quota, len(v))
+            chosen.extend(v[:take].tolist())
+
+        # round-robin remainder
+        remaining = need - len(chosen)
+        if remaining > 0:
+            clusters = list(edge_dict.keys())
+            pos = {c: 0 for c in clusters}
+            while remaining > 0:
+                progressed = False
+                for c in clusters:
+                    v = edge_dict[c]
+                    if pos[c] < len(v):
+                        chosen.append(int(v[pos[c]]))
+                        pos[c] += 1
+                        remaining -= 1
+                        progressed = True
+                        if remaining <= 0:
+                            break
+                if not progressed:
+                    break
+
+        return np.unique(np.array(chosen, dtype=np.int64))
+
+    @staticmethod
+    def compute_default_n_clusters(n_rows: int, budget: int, strategy: str, avg_pts_per_cluster: float) -> int:
+        if budget <= 0:
+            return 0
+        if strategy == 'core':
+            return int(budget)
+        return int(max(1, min(int(n_rows), int(budget // max(1.0, float(avg_pts_per_cluster))))))

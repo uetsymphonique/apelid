@@ -1,0 +1,82 @@
+{
+  "xgb": {
+    "accuracy": 0.8365553025815247,
+    "f1_macro": 0.7788469739016417,
+    "precision_macro": 0.7612252520221395,
+    "recall_macro": 0.941435148802204,
+    "classes": [
+      "Benign",
+      "Bot",
+      "Brute Force -Web",
+      "Brute Force -XSS",
+      "DDOS attack-HOIC",
+      "DDoS attacks-LOIC-HTTP",
+      "DoS attacks-GoldenEye",
+      "DoS attacks-Hulk",
+      "DoS attacks-Slowloris",
+      "Infilteration",
+      "SQL Injection",
+      "SSH-Bruteforce"
+    ]
+  },
+  "dnn": {
+    "accuracy": 0.7312284545824382,
+    "f1_macro": 0.693659701537376,
+    "precision_macro": 0.6833949995778957,
+    "recall_macro": 0.8953346874854389,
+    "classes": [
+      "Benign",
+      "Bot",
+      "Brute Force -Web",
+      "Brute Force -XSS",
+      "DDOS attack-HOIC",
+      "DDoS attacks-LOIC-HTTP",
+      "DoS attacks-GoldenEye",
+      "DoS attacks-Hulk",
+      "DoS attacks-Slowloris",
+      "Infilteration",
+      "SQL Injection",
+      "SSH-Bruteforce"
+    ]
+  },
+  "catb": {
+    "accuracy": 0.8303819828564495,
+    "f1_macro": 0.7348846129147089,
+    "precision_macro": 0.7172227827559948,
+    "recall_macro": 0.9181252157861245,
+    "classes": [
+      "Benign",
+      "Bot",
+      "Brute Force -Web",
+      "Brute Force -XSS",
+      "DDOS attack-HOIC",
+      "DDoS attacks-LOIC-HTTP",
+      "DoS attacks-GoldenEye",
+      "DoS attacks-Hulk",
+      "DoS attacks-Slowloris",
+      "Infilteration",
+      "SQL Injection",
+      "SSH-Bruteforce"
+    ]
+  },
+  "histgbm": {
+    "accuracy": 0.8255179821712785,
+    "f1_macro": 0.7905619209137841,
+    "precision_macro": 0.7671849565897485,
+    "recall_macro": 0.9360701445381854,
+    "classes": [
+      "Benign",
+      "Bot",
+      "Brute Force -Web",
+      "Brute Force -XSS",
+      "DDOS attack-HOIC",
+      "DDoS attacks-LOIC-HTTP",
+      "DoS attacks-GoldenEye",
+      "DoS attacks-Hulk",
+      "DoS attacks-Slowloris",
+      "Infilteration",
+      "SQL Injection",
+      "SSH-Bruteforce"
+    ]
+  }
+}
