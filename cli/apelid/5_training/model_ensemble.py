@@ -80,11 +80,42 @@ def _load_model(model_path: str, model_type: str, num_class: int = None, input_d
         if model_type == 'xgb':
             model = XGBModel(num_class=num_class, params={}, num_round=100, early_stopping=20, random_state=42)
             model.model = model_obj
+            # Enable GPU predictor if requested
+            try:
+                if device in ('cuda', 'GPU', 'auto') and device != 'cpu':
+                    if hasattr(model.model, 'set_params'):
+                        try:
+                            model.model.set_params(**{'device': 'cuda'})
+                        except Exception:
+                            pass
+                    if hasattr(model.model, 'set_param'):
+                        try:
+                            model.model.set_param({'device': 'cuda'})
+                        except Exception:
+                            pass
+                    logger.info("[Ensemble][XGB] Using GPU (device=cuda) when available")
+                else:
+                    logger.info("[Ensemble][XGB] Using CPU predictor")
+            except Exception:
+                pass
             model._is_fitted = True
             return model
         elif model_type == 'catb':
             model = CatBoostModel(num_class=num_class, params={}, random_state=42)
             model.model = model_obj
+            # Try enable GPU if requested
+            try:
+                if device in ('cuda', 'GPU', 'auto') and device != 'cpu':
+                    if hasattr(model.model, 'set_param'):
+                        try:
+                            model.model.set_param({'task_type': 'GPU'})
+                        except Exception:
+                            pass
+                    logger.info("[Ensemble][CatBoost] GPU requested; proceeding if supported by build")
+                else:
+                    logger.info("[Ensemble][CatBoost] Using CPU")
+            except Exception:
+                pass
             model._is_fitted = True
             return model
         elif model_type == 'bagging':

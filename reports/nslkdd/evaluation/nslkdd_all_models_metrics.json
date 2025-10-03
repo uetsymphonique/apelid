@@ -1,0 +1,67 @@
+{
+  "xgb": {
+    "accuracy": 0.9945777572681126,
+    "f1_macro": 0.95227826450466,
+    "precision_macro": 0.9555909181829065,
+    "recall_macro": 0.9490527888022422,
+    "classes": [
+      "Benign",
+      "DoS",
+      "Probe",
+      "R2L",
+      "U2R"
+    ]
+  },
+  "dnn": {
+    "accuracy": 0.9819450853714813,
+    "f1_macro": 0.9133892698073355,
+    "precision_macro": 0.9355320852891058,
+    "recall_macro": 0.8966039230181865,
+    "classes": [
+      "Benign",
+      "DoS",
+      "Probe",
+      "R2L",
+      "U2R"
+    ]
+  },
+  "catb": {
+    "accuracy": 0.9936548223350253,
+    "f1_macro": 0.9372917720701682,
+    "precision_macro": 0.9458384983618753,
+    "recall_macro": 0.929437700897149,
+    "classes": [
+      "Benign",
+      "DoS",
+      "Probe",
+      "R2L",
+      "U2R"
+    ]
+  },
+  "bagging": {
+    "accuracy": 0.992904937701892,
+    "f1_macro": 0.9487639066993075,
+    "precision_macro": 0.9743016127996602,
+    "recall_macro": 0.9293811184711757,
+    "classes": [
+      "Benign",
+      "DoS",
+      "Probe",
+      "R2L",
+      "U2R"
+    ]
+  },
+  "histgbm": {
+    "accuracy": 0.9944047069681587,
+    "f1_macro": 0.9522818291200889,
+    "precision_macro": 0.9709426764686379,
+    "recall_macro": 0.9368692391222323,
+    "classes": [
+      "Benign",
+      "DoS",
+      "Probe",
+      "R2L",
+      "U2R"
+    ]
+  }
+}

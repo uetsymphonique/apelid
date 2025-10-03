@@ -121,9 +121,11 @@ def main():
         # DNN mode: ordinal cat + standard scaled cont
         X_tr, X_val, y_tr, y_val, meta_tr = PrepareData.prepare_training_data(
             df_train, pre, encode_numerical=True, use_validation=True, val_size=float(args.val_frac), random_state=42, mode='dnn'
+            # df_train, pre, encode_numerical=False, use_validation=True, val_size=float(args.val_frac), random_state=42, mode='tree'
         )
         X_te, y_te, meta_te = PrepareData.prepare_input_data(
             df_test, pre, encode_numerical=True, include_label=True, mode='dnn'
+            # df_test, pre, encode_numerical=False, include_label=True, mode='tree'
         )
         classes_sorted = config_class_names
 

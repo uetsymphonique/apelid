@@ -1,0 +1,1 @@
+from art.attacks.evasion import DeepFool

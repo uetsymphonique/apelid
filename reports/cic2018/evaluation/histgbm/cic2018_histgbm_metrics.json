@@ -12,9 +12,7 @@
     "DDoS attacks-LOIC-HTTP",
     "DoS attacks-GoldenEye",
     "DoS attacks-Hulk",
-    "DoS attacks-SlowHTTPTest",
     "DoS attacks-Slowloris",
-    "FTP-BruteForce",
     "Infilteration",
     "SQL Injection",
     "SSH-Bruteforce"
