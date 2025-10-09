@@ -57,7 +57,7 @@ class BaggingModel(Model):
             pickle.dump(self.model, f)
 
     @classmethod
-    def load_model(cls, path: str) -> "BaggingModel":
+    def load_model(cls, path: str, num_class: int = None, device: str = 'auto') -> "BaggingModel":
         import pickle
         with open(path, 'rb') as f:
             mdl = pickle.load(f)

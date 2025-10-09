@@ -1,9 +1,6 @@
 import os
 from typing import Any, Dict, Optional, Tuple
 
-import numpy as np
-import torch
-
 from utils.logging import get_logger
 
 from .art_classifier import AdversarialWrapper
@@ -32,15 +29,12 @@ class DNNClassifier(AdversarialWrapper):
         loss = getattr(self.model, "criterion", None) or nn.CrossEntropyLoss()
         optimizer = getattr(self.model, "optimizer", None)
 
-        device_type = "gpu" if (self.device and str(self.device).startswith("cuda")) else "cpu"
-        # Log device status
-        try:
-            cuda_avail = bool(torch.cuda.is_available())
-            num_devices = torch.cuda.device_count() if cuda_avail else 0
-            logger.info(f"Device: {device_type.upper()} (CUDA available={cuda_avail}, devices={num_devices})")
-        except Exception:
-            logger.info(f"Device: {device_type.upper()}")
-
+        if self.device is None or self.device.startswith('cuda') or self.device == 'auto':
+            device_type = "gpu"
+            logger.info("Device: CUDA (requested)")
+        else:
+            device_type = "cpu"
+            logger.info("Device: CPU")
         estimator = PyTorchClassifier(
             model=torch_model,
             loss=loss,
@@ -51,61 +45,73 @@ class DNNClassifier(AdversarialWrapper):
         )
         return estimator
 
+
     # ---------- Factory helpers ----------
     @classmethod
     def from_checkpoint(
         cls,
         ckpt_path: str,
         *,
-        input_dim: int,
         num_classes: int,
         device: Optional[str] = None,
+        input_dim: Optional[int] = None,
+        clip_values: Tuple[float, float],
         dnn_hparams: Optional[Dict[str, Any]] = None,
     ) -> "DNNClassifier":
-        """Create a DNNClassifier by loading weights from a .pth checkpoint.
+        """Create a DNNClassifier by loading a full DNNModel from .pth.
 
-        Parameters
-        - ckpt_path: path to .pth state_dict saved by training
-        - input_dim: number of input features for the DNN
-        - num_classes: number of classes
-        - device: 'cpu' | 'cuda' | 'auto' | None
-        - dnn_hparams: optional hyperparams for constructing DNNModel
+        Supports new format where the .pth contains both state_dict and metadata
+        required to fully reconstruct the model (including embeddings and InputNorm).
+        For backward compatibility, if needed, an optional input_dim can be passed
+        but will be ignored when metadata is present.
         """
         from training.dnn import DNNModel
 
         if not os.path.exists(ckpt_path):
             raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
 
+        # Prefer new unified load that reconstructs model from metadata
+        try:
+            model = DNNModel.load_model(ckpt_path, device=device)
+        except ValueError:
+            # Legacy format fallback is no longer supported via ART wrapper,
+            # as embedding/InputNorm config is required for consistent behavior.
+            raise RuntimeError(
+                "Legacy DNN .pth format detected. Please retrain to save metadata-enabled checkpoint."
+            )
+
+        # Infer input_dim from model if not provided
+        inferred_input_dim: int
+        if hasattr(model, "input_dim") and isinstance(getattr(model, "input_dim"), int):
+            inferred_input_dim = int(getattr(model, "input_dim"))
+        else:
+            # Fallback best-effort: try to read first Linear layer in underlying torch model
+            torch_model = getattr(model, "model", None) or model
+            first_layer = None
+            try:
+                for m in getattr(torch_model, "modules")():
+                    if hasattr(m, "in_features"):
+                        first_layer = m
+                        break
+            except Exception:
+                first_layer = None
+            if first_layer is not None and hasattr(first_layer, "in_features"):
+                inferred_input_dim = int(getattr(first_layer, "in_features"))
+            else:
+                if input_dim is None:
+                    raise RuntimeError("Unable to infer input_dim for DNNClassifier")
+                inferred_input_dim = int(input_dim)
+
         hp = dnn_hparams or {}
-
-        model = DNNModel(
-            input_dim=int(input_dim),
-            num_class=int(num_classes),
-            lr=float(hp.get("lr", 1e-3)),
-            weight_decay=float(hp.get("weight_decay", 1e-4)),
-            batch_size=int(hp.get("batch_size", 512)),
-            max_epochs=int(hp.get("epochs", 1)),  # not used for inference
-            patience=int(hp.get("patience", 8)),
-            device=None if (device == "auto") else device,
-            random_state=int(hp.get("random_state", 42)),
-        )
-
-        # Load weights (state_dict) directly into underlying torch module
-        map_location = "cpu" if device == "cpu" else None
-        state_dict = torch.load(ckpt_path, map_location=map_location)
-        # Accept both raw nn.Module or wrapped DNNModel with .model
-        torch_module = getattr(model, "model", None) or model
-        torch_module.load_state_dict(state_dict)
-        model._is_fitted = True
-
         wrapper = cls(
             model=model,
-            num_classes=num_classes,
-            input_shape=(int(input_dim),),
+            num_classes=int(num_classes),
+            input_shape=(inferred_input_dim,),
+            clip_values=clip_values,
             device=device,
             params=hp,
         )
-        logger.info(f"Loaded checkpoint from {ckpt_path} on device={device}")
+        logger.info(f"Loaded DNN (with metadata) from {ckpt_path} on device={device}")
         return wrapper
 
 

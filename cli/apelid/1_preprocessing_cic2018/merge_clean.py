@@ -1,4 +1,5 @@
 import os
+import sys
 import argparse
 import pandas as pd
 import numpy as np
@@ -6,6 +7,8 @@ import logging
 from typing import List, Tuple
 from collections import Counter
 
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+sys.path.append(os.path.dirname(SCRIPT_DIR))
 import configs.cic2018
 from preprocessing.cic2018_preprocessor import CIC2018Preprocessor
 from utils.logging import setup_logging, get_logger
@@ -152,7 +155,7 @@ def merge_csv_files_with_early_cleaning(
             chunk = preprocessor.remove_negative_numeric_rows(chunk)
 
             # Drop rows with many zeros in continuous features (>=50% of cont_features == 0)
-            chunk = preprocessor.drop_rows_with_zero_heavy_continuous(chunk, threshold_frac=0.5)
+            # chunk = preprocessor.drop_rows_with_zero_heavy_continuous(chunk, threshold_frac=0.5)
 
             # Drop duplicates (intra-chunk)
             chunk = preprocessor.fix_duplicates(chunk)

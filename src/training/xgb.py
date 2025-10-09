@@ -95,16 +95,34 @@ class XGBModel(Model):
     def save_model(self, path: str) -> None:
         if not self._is_fitted or self.model is None:
             raise RuntimeError("Model not fitted")
-        self.model.save_model(path)
+        import pickle
+        with open(path, 'wb') as f:
+            pickle.dump(self.model, f)
 
     @classmethod
-    def load_model(cls, path: str) -> "XGBModel":
-        booster = xgb.Booster()
-        booster.load_model(path)
+    def load_model(cls, path: str, num_class: int = None, device: str = 'auto') -> "XGBModel":
+        import pickle
+        with open(path, 'rb') as f:
+            booster = pickle.load(f)
         # num_class is not directly exposed; require user to set afterwards if needed
-        inst = cls(num_class=2)
+        inst = cls(num_class=num_class or 2)
         inst.model = booster
         inst._is_fitted = True
+        
+        # Try enable GPU predictor if requested
+        try:
+            if device in ('cuda', 'GPU', 'auto') and device != 'cpu':
+                if hasattr(inst.model, 'set_param'):
+                    try:
+                        inst.model.set_param({'device': 'cuda'})
+                    except Exception:
+                        pass
+                logger.info("[XGB] Using GPU (device=cuda) when available")
+            else:
+                logger.info("[XGB] Using CPU predictor")
+        except Exception:
+            pass
+        
         return inst
 
 

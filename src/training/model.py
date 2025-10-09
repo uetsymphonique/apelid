@@ -59,7 +59,7 @@ def log_gpu_status(device: str = None, model_name: str = "Model") -> None:
             total_gb = gpu_status['memory_total'] / (1024**3)
             allocated_gb = gpu_status['memory_allocated'] / (1024**3)
             free_gb = gpu_status['memory_free'] / (1024**3)
-            logger.info(f"GPU info:{model_name} - Memory - Total: {total_gb:.2f}GB, Allocated: {allocated_gb:.2f}GB, Free: {free_gb:.2f}GB")
+            logger.info(f"GPU info: {model_name} - Memory - Total: {total_gb:.2f}GB, Allocated: {allocated_gb:.2f}GB, Free: {free_gb:.2f}GB")
     else:
         logger.warning(f"{model_name} - CUDA not available, using CPU")
 

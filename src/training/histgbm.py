@@ -51,11 +51,11 @@ class HistGBMModel(Model):
             pickle.dump(self.model, f)
 
     @classmethod
-    def load_model(cls, path: str) -> "HistGBMModel":
+    def load_model(cls, path: str, num_class: int = None, device: str = 'auto') -> "HistGBMModel":
         import pickle
         with open(path, 'rb') as f:
             mdl = pickle.load(f)
-        inst = cls(num_class=int(getattr(mdl, 'classes_', []).__len__() or 2))
+        inst = cls(num_class=num_class or int(getattr(mdl, 'classes_', []).__len__() or 2))
         inst.model = mdl
         inst._is_fitted = True
         return inst

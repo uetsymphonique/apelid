@@ -5,12 +5,13 @@ import pandas as pd
 
 from utils.logging import get_logger, setup_logging
 
-from preprocessing.cic2018_preprocessor import CIC2018Preprocessor
-from preprocessing.nslkdd_preprocessor import NSLKDDPreprocessor
+
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 from configs import CIC2018Resources, NSLKDDResources
+from preprocessing.cic2018_preprocessor import CIC2018Preprocessor
+from preprocessing.nslkdd_preprocessor import NSLKDDPreprocessor
 
 
 logger = get_logger(__name__)

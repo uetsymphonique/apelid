@@ -1,8 +1,8 @@
 {
-  "accuracy": 0.9936548223350253,
-  "f1_macro": 0.9372917720701682,
-  "precision_macro": 0.9458384983618753,
-  "recall_macro": 0.929437700897149,
+  "accuracy": 0.9934817720350715,
+  "f1_macro": 0.9369692916968064,
+  "precision_macro": 0.9455864534601272,
+  "recall_macro": 0.9290478613249565,
   "classes": [
     "Benign",
     "DoS",

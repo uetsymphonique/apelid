@@ -1,9 +1,9 @@
 {
   "xgb": {
-    "accuracy": 0.9945777572681126,
-    "f1_macro": 0.95227826450466,
-    "precision_macro": 0.9555909181829065,
-    "recall_macro": 0.9490527888022422,
+    "accuracy": 0.9950392247346562,
+    "f1_macro": 0.9616424483783191,
+    "precision_macro": 0.9675185290571889,
+    "recall_macro": 0.9561003313521272,
     "classes": [
       "Benign",
       "DoS",
@@ -13,10 +13,10 @@
     ]
   },
   "dnn": {
-    "accuracy": 0.9819450853714813,
-    "f1_macro": 0.9133892698073355,
-    "precision_macro": 0.9355320852891058,
-    "recall_macro": 0.8966039230181865,
+    "accuracy": 0.9856945085371481,
+    "f1_macro": 0.9178798836849731,
+    "precision_macro": 0.9392598388308221,
+    "recall_macro": 0.9018573101898454,
     "classes": [
       "Benign",
       "DoS",
@@ -26,10 +26,10 @@
     ]
   },
   "catb": {
-    "accuracy": 0.9936548223350253,
-    "f1_macro": 0.9372917720701682,
-    "precision_macro": 0.9458384983618753,
-    "recall_macro": 0.929437700897149,
+    "accuracy": 0.9934817720350715,
+    "f1_macro": 0.9369692916968064,
+    "precision_macro": 0.9455864534601272,
+    "recall_macro": 0.9290478613249565,
     "classes": [
       "Benign",
       "DoS",

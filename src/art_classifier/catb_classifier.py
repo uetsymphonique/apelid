@@ -3,7 +3,7 @@ from typing import Any
 from .art_classifier import AdversarialWrapper
 
 from utils.logging import get_logger
-
+from typing import Tuple
 logger = get_logger(__name__)
 class CatBoostWrapper(AdversarialWrapper):
     """ART wrapper for CatBoostClassifier models.
@@ -17,11 +17,42 @@ class CatBoostWrapper(AdversarialWrapper):
         except Exception as exc:  # pragma: no cover
             raise RuntimeError("ART is required for CatBoostWrapper") from exc
         # Try to log/enable GPU intent
-        if self.device and str(self.device).startswith("cuda"):
+        if self.device and (str(self.device).startswith("cuda") or self.device == "auto"):
             logger.info("Device: CUDA (requested). Inference GPU usage depends on CatBoost build; proceeding.")
         else:
             logger.info("Device: CPU")
 
-        return CatBoostARTClassifier(model=self.model)
+        logger.info(f"Input shape: {self.input_shape}")
+
+        return CatBoostARTClassifier(model=self.model, nb_features=self.input_shape[0], clip_values=self.clip_values)
+
+
+    # ---------- Factory helpers ----------
+    @classmethod
+    def from_model_path(
+        cls,
+        path: str,
+        *,
+        num_classes: int,
+        input_dim: int,
+        clip_values: Tuple[float, float],
+        device: str | None = None,
+    ) -> "CatBoostWrapper":
+        """Create a wrapper by loading a trained CatBoost model via training.CatBoostModel.
+
+        Compatible with the current pickle-based persistence.
+        """
+        from training.catb import CatBoostModel
+
+        model_inst = CatBoostModel.load_model(path, num_class=int(num_classes), device=device)
+        wrapper = cls(
+            model=model_inst.model,
+            num_classes=int(num_classes),
+            input_shape=(int(input_dim),),
+            clip_values=clip_values,
+            device=device,
+            params={},
+        )
+        return wrapper
 
 

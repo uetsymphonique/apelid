@@ -1,89 +1,9 @@
 {
-  "xgb": {
-    "accuracy": 0.9611011913768928,
-    "f1_macro": 0.94231240405615,
-    "precision_macro": 0.9433367541461384,
-    "recall_macro": 0.9417155006284258,
-    "classes": [
-      "Benign",
-      "Bot",
-      "Brute Force -Web",
-      "Brute Force -XSS",
-      "DDOS attack-HOIC",
-      "DDoS attacks-LOIC-HTTP",
-      "DoS attacks-GoldenEye",
-      "DoS attacks-Hulk",
-      "DoS attacks-Slowloris",
-      "Infilteration",
-      "SQL Injection",
-      "SSH-Bruteforce"
-    ]
-  },
   "dnn": {
-    "accuracy": 0.9406228248040432,
-    "f1_macro": 0.8762053616082673,
-    "precision_macro": 0.8715141477941576,
-    "recall_macro": 0.8964848154404521,
-    "classes": [
-      "Benign",
-      "Bot",
-      "Brute Force -Web",
-      "Brute Force -XSS",
-      "DDOS attack-HOIC",
-      "DDoS attacks-LOIC-HTTP",
-      "DoS attacks-GoldenEye",
-      "DoS attacks-Hulk",
-      "DoS attacks-Slowloris",
-      "Infilteration",
-      "SQL Injection",
-      "SSH-Bruteforce"
-    ]
-  },
-  "catb": {
-    "accuracy": 0.9597292416951649,
-    "f1_macro": 0.9165520116391724,
-    "precision_macro": 0.9151144440966137,
-    "recall_macro": 0.9184886960274702,
-    "classes": [
-      "Benign",
-      "Bot",
-      "Brute Force -Web",
-      "Brute Force -XSS",
-      "DDOS attack-HOIC",
-      "DDoS attacks-LOIC-HTTP",
-      "DoS attacks-GoldenEye",
-      "DoS attacks-Hulk",
-      "DoS attacks-Slowloris",
-      "Infilteration",
-      "SQL Injection",
-      "SSH-Bruteforce"
-    ]
-  },
-  "bagging": {
-    "accuracy": 0.96114154283812,
-    "f1_macro": 0.9437577508629348,
-    "precision_macro": 0.9421268093701572,
-    "recall_macro": 0.945552618440289,
-    "classes": [
-      "Benign",
-      "Bot",
-      "Brute Force -Web",
-      "Brute Force -XSS",
-      "DDOS attack-HOIC",
-      "DDoS attacks-LOIC-HTTP",
-      "DoS attacks-GoldenEye",
-      "DoS attacks-Hulk",
-      "DoS attacks-Slowloris",
-      "Infilteration",
-      "SQL Injection",
-      "SSH-Bruteforce"
-    ]
-  },
-  "histgbm": {
-    "accuracy": 0.9592954634869715,
-    "f1_macro": 0.9373938576735448,
-    "precision_macro": 0.9391494635584766,
-    "recall_macro": 0.9359971664433605,
+    "accuracy": 0.9402882904027069,
+    "f1_macro": 0.8835286259616817,
+    "precision_macro": 0.9420279072526782,
+    "recall_macro": 0.8568179235704622,
     "classes": [
       "Benign",
       "Bot",

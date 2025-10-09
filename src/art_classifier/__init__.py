@@ -1,7 +1,5 @@
 from .art_classifier import (
     AdversarialWrapper,
-    create_art_wrapper,
-    WRAPPER_REGISTRY,
 )
 from .dnn_classifier import DNNClassifier
 from .sklearn_classifier import SkleanWrapper
@@ -14,8 +12,6 @@ __all__ = [
     "SkleanWrapper",
     "CatBoostWrapper",
     "XGBWrapper",
-    "create_art_wrapper",
-    "WRAPPER_REGISTRY",
 ]
 
 

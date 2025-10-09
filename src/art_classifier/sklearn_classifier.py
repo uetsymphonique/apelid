@@ -12,6 +12,6 @@ class SkleanWrapper(AdversarialWrapper):
         except Exception as exc:  # pragma: no cover
             raise RuntimeError("ART is required for SkleanWrapper") from exc
 
-        return SklearnClassifier(model=self.model)
+        return SklearnClassifier(model=self.model, clip_values=self.clip_values)
 
 

@@ -31,22 +31,67 @@ class CIC2018Resources(Resources):
         # 'DoS attacks-SlowHTTPTest',
         # 'FTP-BruteForce'
     ]
-
-
-# Backward compatibility module-level constants
-ORIGINAL_DATA_FOLDER = CIC2018Resources.ORIGINAL_DATA_FOLDER
-DATA_FOLDER = CIC2018Resources.DATA_FOLDER
-REPORT_FOLDER = CIC2018Resources.REPORT_FOLDER
-ENCODERS_FOLDER = CIC2018Resources.ENCODERS_FOLDER
-ENCODED_DATA_FOLDER = CIC2018Resources.ENCODED_DATA_FOLDER
-RAW_PROCESSED_DATA_FOLDER = CIC2018Resources.RAW_PROCESSED_DATA_FOLDER
-CLEAN_MERGED_DATA_FOLDER = CIC2018Resources.CLEAN_MERGED_DATA_FOLDER
-EMBEDDINGS_FOLDER = CIC2018Resources.EMBEDDINGS_FOLDER
-PCA_CACHE_FOLDER = CIC2018Resources.PCA_CACHE_FOLDER
-LABEL_COLUMN = CIC2018Resources.LABEL_COLUMN
-MAJORITY_LABELS = CIC2018Resources.MAJORITY_LABELS
-MINORITY_LABELS = CIC2018Resources.MINORITY_LABELS
-
-
-def get_label_name(class_name: str) -> str:
-    return CIC2018Resources.get_label_name(class_name)
+    ATTACK_PARAMETERS = {
+        'zoo': {
+            'confidence': 0.0,
+            'targeted': False,
+            'learning_rate': 0.05,
+            'max_iter': 150,
+            'binary_search_steps': 3,
+            'initial_const': 1e-3,
+            'abort_early': True,
+            'use_resize': False,
+            'use_importance': False,
+            'nb_parallel': 10,
+            'batch_size': 64,
+            'variable_h': 0.02,
+            'verbose': True
+        },
+        'hsja': {
+            "batch_size": 16,
+            "targeted": False,
+            "norm": 2,
+            "max_iter": 10,
+            "max_eval": 600,
+            "init_eval": 20,
+            "init_size": 20,
+            "verbose": True
+        },
+        'jsma': {
+            "theta": 0.02,
+            "gamma": 0.1,
+            "batch_size": 64,
+        },
+        'fgsm': {
+            "eps": 0.1,
+            "batch_size": 64,
+            "eps_step": 0.01,
+            "targeted": False,
+        },
+        'pgd': {
+            "num_random_init": 10,
+            "eps": 0.2,
+            "eps_step": 0.01,
+            "batch_size": 64,
+            "targeted": True,
+            "max_iter": 200,
+            "verbose": True
+        },
+        'deepfool': {
+            "max_iter": 100,
+            "batch_size": 64,
+            "nb_grads": 5,
+            "epsilon": 1e-6
+        },
+        'cw': {
+            "confidence": 0.0,
+            "learning_rate": 0.01,
+            "binary_search_steps": 3,
+            "max_iter": 3,
+            "batch_size": 64,
+            "verbose": False,
+            "initial_const": 0.01,
+            "max_halving": 5,
+            "max_doubling": 5
+        },
+    }

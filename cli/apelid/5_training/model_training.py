@@ -4,8 +4,6 @@ import argparse
 import json
 import numpy as np
 import pandas as pd
-import torch
-import pickle
 
 from utils.logging import setup_logging, get_logger
 
@@ -85,49 +83,48 @@ def main():
 
     params = _load_params(args.model, args.params_dir)
 
-    if args.model in ('xgb', 'catb', 'bagging', 'histgbm'):
-        # Tree mode: ordinal cat, cont kept, binary 0/1, label encode
-        X_tr, X_val, y_tr, y_val, meta_tr = PrepareData.prepare_training_data(
-            df_train, pre, encode_numerical=False, use_validation=True, val_size=float(args.val_frac), random_state=42, mode='tree'
+    # Prepare data for all models using the unified PrepareData interface
+    X_tr, X_val, y_tr, y_val, meta_tr = PrepareData.prepare_training_data(
+        df_train, pre, use_validation=True, val_size=float(args.val_frac), random_state=42
+    )
+    X_te, y_te, meta_te = PrepareData.prepare_input_data(
+        df_test, pre, include_label=True
+    )
+    classes_sorted = config_class_names
+
+    # Initialize model based on type
+    if args.model == 'xgb':
+        xgb_params = params.get('params', {})
+        if args.device in ('GPU', 'auto'):
+            xgb_params['device'] = 'cuda'
+            xgb_params['tree_method'] = 'hist'
+        model = XGBModel(
+            num_class=len(classes_sorted),
+            params=xgb_params,
+            num_round=int(params.get('num_round', 1200)),
+            early_stopping=int(params.get('early_stopping', 20)),
+            random_state=42,
         )
-        X_te, y_te, meta_te = PrepareData.prepare_input_data(
-            df_test, pre, encode_numerical=False, include_label=True, mode='tree'
-        )
-        classes_sorted = config_class_names
-        if args.model == 'xgb':
-            xgb_params = params.get('params', {})
-            if args.device in ('GPU', 'auto'):
-                xgb_params['device'] = 'cuda'
-                xgb_params['tree_method'] = 'hist'
-            model = XGBModel(
-                num_class=len(classes_sorted),
-                params=xgb_params,
-                num_round=int(params.get('num_round', 1200)),
-                early_stopping=int(params.get('early_stopping', 20)),
-                random_state=42,
-            )
-        elif args.model == 'catb':
-            cb_params = params.get('params', {}).copy()
-            # Enable GPU when requested
-            if args.device in ('GPU', 'auto'):
-                cb_params['task_type'] = 'GPU'
-                # Let CatBoost choose devices by default; users can override in params JSON
-            model = CatBoostModel(num_class=len(classes_sorted), params=cb_params, random_state=42)
-        elif args.model == 'bagging':
-            model = BaggingModel(params=params.get('params', {}), random_state=42)
-        else:  # histgbm
-            model = HistGBMModel(num_class=len(classes_sorted), params=params.get('params', {}), random_state=42)
-    else:
-        # DNN mode: ordinal cat + standard scaled cont
-        X_tr, X_val, y_tr, y_val, meta_tr = PrepareData.prepare_training_data(
-            df_train, pre, encode_numerical=True, use_validation=True, val_size=float(args.val_frac), random_state=42, mode='dnn'
-            # df_train, pre, encode_numerical=False, use_validation=True, val_size=float(args.val_frac), random_state=42, mode='tree'
-        )
-        X_te, y_te, meta_te = PrepareData.prepare_input_data(
-            df_test, pre, encode_numerical=True, include_label=True, mode='dnn'
-            # df_test, pre, encode_numerical=False, include_label=True, mode='tree'
-        )
-        classes_sorted = config_class_names
+    elif args.model == 'catb':
+        cb_params = params.get('params', {}).copy()
+        # Enable GPU when requested
+        if args.device in ('GPU', 'auto'):
+            cb_params['task_type'] = 'GPU'
+            # Let CatBoost choose devices by default; users can override in params JSON
+        model = CatBoostModel(num_class=len(classes_sorted), params=cb_params, random_state=42)
+    elif args.model == 'bagging':
+        model = BaggingModel(params=params.get('params', {}), random_state=42)
+    elif args.model == 'histgbm':
+        model = HistGBMModel(num_class=len(classes_sorted), params=params.get('params', {}), random_state=42)
+    else:  # args.model == 'dnn'
+        # Build embedding DNN configuration
+        cat_cardinalities = pre.extract_categorical_cardinalities()
+        cat_feature_indices = meta_tr['cat_feature_indices']
+        cont_feature_indices = meta_tr['cont_feature_indices']
+        binary_feature_indices = meta_tr.get('binary_feature_indices', [])
+        cont_means = meta_tr.get('cont_means')
+        cont_stds = meta_tr.get('cont_stds')
+        inputnorm_eps = float(meta_tr.get('inputnorm_eps', 1e-6))
 
         model = DNNModel(
             input_dim=X_tr.shape[1],
@@ -139,6 +136,16 @@ def main():
             patience=int(params.get('patience', 8)),
             device=None if args.device == 'auto' else args.device,
             random_state=int(params.get('random_state', 42)),
+            # embedding + inputnorm
+            cat_cardinalities=cat_cardinalities,
+            cat_feature_indices=cat_feature_indices,
+            binary_feature_indices=binary_feature_indices,
+            cont_feature_indices=cont_feature_indices,
+            embedding_dim=int(params.get('embedding_dim', 16)),
+            hidden_dims=[256, 128],
+            cont_means=cont_means,
+            cont_stds=cont_stds,
+            inputnorm_eps=inputnorm_eps,
         )
 
     model.fit(X_tr, y_tr, X_val, y_val)
@@ -157,14 +164,8 @@ def main():
     cm_out = args.cm_out or os.path.join(report_folder, f'{model_tag}_cm.png')
 
     os.makedirs(os.path.dirname(model_out), exist_ok=True)
-    # Save model
-    if args.model in ('xgb', 'catb', 'bagging', 'histgbm'):
-        # Tree models -> pickle
-        with open(model_out, 'wb') as f:
-            pickle.dump(model.model, f)
-    else:
-        # DNN -> torch state_dict
-        torch.save(model.model.state_dict(), model_out)
+    # Save model using save_model method
+    model.save_model(model_out)
 
     with open(report_out, 'w') as f:
         json.dump(metrics, f, indent=2)

@@ -47,7 +47,8 @@ class NSLKDDPreprocessor(Preprocessor):
             'protocol_type', 'service', 'flag'
         ]
         self.cat_features = self.encoded_categorical_features
-        self.cont_features = self.encoded_numerical_features = ['duration', 'src_bytes', 'dst_bytes', 'wrong_fragment', 'urgent', 'hot', 
+        self.cat_features_in_large_scale = []
+        self.cont_features = ['duration', 'src_bytes', 'dst_bytes', 'wrong_fragment', 'urgent', 'hot', 
             'num_failed_logins', 'num_compromised', 'root_shell', 'su_attempted', 
             'num_root', 'num_file_creations', 'num_shells', 'num_access_files', 
             'num_outbound_cmds', 'count', 'srv_count', 'serror_rate', 
@@ -58,6 +59,7 @@ class NSLKDDPreprocessor(Preprocessor):
             'dst_host_serror_rate', 'dst_host_srv_serror_rate', 'dst_host_rerror_rate', 
             'dst_host_srv_rerror_rate'
         ]
+        self.encoded_numerical_features = self.cat_features_in_large_scale + self.cont_features
         self.binary_features = ['land', 'logged_in', 'is_host_login', 'is_guest_login']
         self.encoders = {}
         self.encoders_dir = "encoders/nslkdd"
@@ -160,10 +162,11 @@ class NSLKDDPreprocessor(Preprocessor):
         df[self.encoded_numerical_features] = scaler.transform(df[self.encoded_numerical_features])
         return df
 
-    def preprocess_encode_numerical_features_standard(self, df: pd.DataFrame):
+    def preprocess_encode_numerical_features_standard(self, df: pd.DataFrame, **kwargs):
+        df_clean = df.copy()
         scaler = self.encoders['standard']
-        df[self.encoded_numerical_features] = scaler.transform(df[self.encoded_numerical_features])
-        return df
+        df_clean[self.encoded_numerical_features] = scaler.transform(df_clean[self.encoded_numerical_features])
+        return df_clean
 
     def preprocess_encode_ordinal_features(self, df: pd.DataFrame):
         encoder = self.encoders['ordinal']
@@ -188,6 +191,12 @@ class NSLKDDPreprocessor(Preprocessor):
     def preprocess_encode_label(self, df: pd.DataFrame):
         encoder = self.encoders['label']
         df[self.label_column] = encoder.transform(df[self.label_column])
+        return df
+
+    def inverse_transform_label(self, df: pd.DataFrame):
+        if 'label' in self.encoders and self.label_column in df.columns:
+            label_encoder = self.encoders['label']
+            df[self.label_column] = label_encoder.inverse_transform(df[self.label_column])
         return df
 
     def inverse_transform(self, df: pd.DataFrame, numerical_inverse: str = 'minmax'):
@@ -273,4 +282,11 @@ class NSLKDDPreprocessor(Preprocessor):
         logger.debug(f"[+] Inverse transform completed. Shape: {df_inverse.shape}")
         return df_inverse
 
-
+    def extract_categorical_cardinalities(self):
+        features_and_cardinalities = {}
+        features = self.encoders['ordinal'].feature_names_in_
+        categories = self.encoders['ordinal'].categories_
+        for feature, category in zip(features, categories):
+            features_and_cardinalities[feature] = len(category)
+            logger.debug(f"[+] Cardinality of {feature}: {len(category)}")
+        return features_and_cardinalities

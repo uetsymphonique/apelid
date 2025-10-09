@@ -99,22 +99,8 @@ class CIC2018Preprocessor(Preprocessor):
         
         
         # Numerical features for MinMax scaling (all features minus categorical and binary)
-        self.encoded_numerical_features = [
-            'Dst Port', 'Flow Duration', 'Tot Fwd Pkts', 'Tot Bwd Pkts', # 4
-            'TotLen Fwd Pkts', 'TotLen Bwd Pkts', 'Fwd Pkt Len Max', 'Fwd Pkt Len Min', # 8
-            'Fwd Pkt Len Mean', 'Fwd Pkt Len Std', 'Bwd Pkt Len Max', 'Bwd Pkt Len Min', # 12
-            'Bwd Pkt Len Mean', 'Bwd Pkt Len Std', 'Flow Byts/s', 'Flow Pkts/s', # 16
-            'Flow IAT Mean', 'Flow IAT Std', 'Flow IAT Max', 'Flow IAT Min', # 20
-            'Fwd IAT Tot', 'Fwd IAT Mean', 'Fwd IAT Std', 'Fwd IAT Max', 'Fwd IAT Min', # 25
-            'Bwd IAT Tot', 'Bwd IAT Mean', 'Bwd IAT Std', 'Bwd IAT Max', 'Bwd IAT Min', # 30
-            'Fwd Header Len', 'Bwd Header Len', 'Fwd Pkts/s', 'Bwd Pkts/s', # 34
-            'Pkt Len Min', 'Pkt Len Max', 'Pkt Len Mean', 'Pkt Len Std', 'Pkt Len Var', # 39
-            'Down/Up Ratio', 'Pkt Size Avg', 'Fwd Seg Size Avg', 'Bwd Seg Size Avg', # 43
-            'Subflow Fwd Pkts', 'Subflow Fwd Byts', 'Subflow Bwd Pkts', 'Subflow Bwd Byts', # 47
-            'Init Fwd Win Byts', 'Fwd Act Data Pkts', 'Fwd Seg Size Min', # 50
-            'Active Mean', 'Active Std', 'Active Max', 'Active Min', 'Idle Mean', 'Idle Std', # 56
-            'Idle Max', 'Idle Min' # 58
-        ]
+        self.cat_features_in_large_scale = ['Dst Port']
+        self.encoded_numerical_features = self.cat_features_in_large_scale + self.cont_features
 
         self.numerical_features_for_approx_dedup = self.cont_features
         
@@ -332,17 +318,19 @@ class CIC2018Preprocessor(Preprocessor):
         df_clean[self.encoded_numerical_features] = qtx.transform(df_clean[self.encoded_numerical_features])
         return df_clean
 
-    def preprocess_encode_numerical_features_standard(self, df: pd.DataFrame):
+    def preprocess_encode_numerical_features_standard(self, df: pd.DataFrame, exclude_large_scale_categories: bool = False):
         """Encode numerical features using StandardScaler (mean=0, std=1)."""
         logger.debug(f"[+] Encoding numerical features using StandardScaler (mean=0, std=1)")
         if not self.encoded_numerical_features or not all(col in df.columns for col in self.encoded_numerical_features):
             return df
-        df_clean = df.copy()
-
         scaler = self.encoders.get('numerical_standard')
         if scaler is None:
             raise RuntimeError("Standard scaler not initialized. Call setup_encoders() first.")
+        df_clean = df.copy()        
         df_clean[self.encoded_numerical_features] = scaler.transform(df_clean[self.encoded_numerical_features])
+        if exclude_large_scale_categories:
+            logger.debug(f"[+] Excluding large scale categories: {self.cat_features_in_large_scale}")
+            df_clean[self.cat_features_in_large_scale] = df[self.cat_features_in_large_scale]
         return df_clean
 
     def preprocess_encode_numerical_features_quantile_uniform(self, df: pd.DataFrame):
@@ -554,32 +542,17 @@ class CIC2018Preprocessor(Preprocessor):
                 logger.warning(f"[!] Quantile inverse_transform failed: {e}")
         return df_inv
 
-    def export_encoded_data(self, df: pd.DataFrame, file_path: str):
-        """
-        Export encoded DataFrame to CSV file
-        """
-        try:
-            df.to_csv(file_path, index=False)
-            logger.info(f"[+] Encoded data exported to: {file_path}")
-            logger.info(f"[+] Shape: {df.shape}")
-            return True
-        except Exception as e:
-            logger.error(f"[-] Error exporting encoded data to {file_path}: {e}")
-            return False
+    def inverse_transform_label(self, df: pd.DataFrame):
+        if 'label' in self.encoders and self.label_column in df.columns:
+            label_encoder = self.encoders['label']
+            df[self.label_column] = label_encoder.inverse_transform(df[self.label_column])
+        return df
 
-    def export_raw_data(self, df: pd.DataFrame, file_path: str):
-        """
-        Export raw DataFrame (after inverse transform) to CSV file
-        """
-        try:
-            df.to_csv(file_path, index=False)
-            logger.info(f"[+] Raw data exported to: {file_path}")
-            logger.info(f"[+] Shape: {df.shape}")
-            return True
-        except Exception as e:
-            logger.error(f"[-] Error exporting raw data to {file_path}: {e}")
-            return False
-            
-
-    
+    def extract_categorical_cardinalities(self):
+        features_and_cardinalities = {}
+        features = self.encoders['ordinal'].feature_names_in_
+        categories = self.encoders['ordinal'].categories_
+        for feature, category in zip(features, categories):
+            features_and_cardinalities[feature] = len(category)
+        return features_and_cardinalities
 

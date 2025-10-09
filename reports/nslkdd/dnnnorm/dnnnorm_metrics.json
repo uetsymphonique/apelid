@@ -1,0 +1,13 @@
+{
+  "accuracy": 0.9849446239040147,
+  "f1_macro": 0.9139116260925946,
+  "precision_macro": 0.9252599056856843,
+  "recall_macro": 0.9037703478216754,
+  "classes": [
+    "Benign",
+    "DoS",
+    "Probe",
+    "R2L",
+    "U2R"
+  ]
+}

@@ -18,12 +18,14 @@ class AdversarialWrapper(abc.ABC):
         model: Any,
         num_classes: int,
         input_shape: Tuple[int, ...],
+        clip_values: Tuple[float, float],
         device: str | None = None,
         params: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.model = model
         self.num_classes = int(num_classes)
         self.input_shape = tuple(input_shape)
+        self.clip_values = tuple(clip_values)
         self.device = device or "cpu"
         self.params = params.copy() if params else {}
         self._estimator = None  # Underlying ART estimator
@@ -61,28 +63,6 @@ class AdversarialWrapper(abc.ABC):
         self.params.update(kwargs)
 
 
-from .dnn_classifier import DNNClassifier
 
-
-# Convenience factory
-WRAPPER_REGISTRY: Dict[str, type[AdversarialWrapper]] = {
-    "dnn": DNNClassifier,
-}
-
-
-def create_art_wrapper(
-    model_type: str,
-    *,
-    model: Any,
-    num_classes: int,
-    input_shape: Tuple[int, ...],
-    device: str | None = None,
-    params: Optional[Dict[str, Any]] = None,
-) -> AdversarialWrapper:
-    key = model_type.lower()
-    if key not in WRAPPER_REGISTRY:
-        raise ValueError(f"Unsupported model_type for ART wrapper: {model_type}")
-    cls = WRAPPER_REGISTRY[key]
-    return cls(model=model, num_classes=num_classes, input_shape=input_shape, device=device, params=params)
 
 

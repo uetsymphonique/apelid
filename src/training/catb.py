@@ -63,13 +63,28 @@ class CatBoostModel(Model):
             pickle.dump(self.model, f)
 
     @classmethod
-    def load_model(cls, path: str) -> "CatBoostModel":
+    def load_model(cls, path: str, num_class: int = None, device: str = 'auto') -> "CatBoostModel":
         import pickle
         with open(path, 'rb') as f:
             mdl = pickle.load(f)
-        inst = cls(num_class=int(getattr(mdl, 'classes_', []).__len__() or 2))
+        inst = cls(num_class=num_class or int(getattr(mdl, 'classes_', []).__len__() or 2))
         inst.model = mdl
         inst._is_fitted = True
+        
+        # Try enable GPU if requested
+        try:
+            if device in ('cuda', 'GPU', 'auto') and device != 'cpu':
+                if hasattr(inst.model, 'set_param'):
+                    try:
+                        inst.model.set_param({'task_type': 'GPU'})
+                    except Exception:
+                        pass
+                logger.info("[CatBoost] GPU requested; proceeding if supported by build")
+            else:
+                logger.info("[CatBoost] Using CPU")
+        except Exception:
+            pass
+        
         return inst
 
 

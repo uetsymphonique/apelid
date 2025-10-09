@@ -18,19 +18,66 @@ class NSLKDDResources(Resources):
     MAJORITY_LABELS = ['Benign', 'DoS']
     MINORITY_LABELS = ['Probe', 'R2L', 'U2R']
 
-
-# Backward compatibility module-level constants
-DATA_FOLDER = NSLKDDResources.DATA_FOLDER
-KDD_TEXT_PATH = NSLKDDResources.KDD_TEXT_PATH
-NSLKDD_ORIGINAL_CSV_PATH = NSLKDDResources.NSLKDD_ORIGINAL_CSV_PATH
-CLEAN_MERGED_DATA_FOLDER = NSLKDDResources.CLEAN_MERGED_DATA_FOLDER
-ENCODED_DATA_FOLDER = NSLKDDResources.ENCODED_DATA_FOLDER
-RAW_PROCESSED_DATA_FOLDER = NSLKDDResources.RAW_PROCESSED_DATA_FOLDER
-ENCODERS_FOLDER = NSLKDDResources.ENCODERS_FOLDER
-REPORT_FOLDER = NSLKDDResources.REPORT_FOLDER
-MAJORITY_LABELS = NSLKDDResources.MAJORITY_LABELS
-MINORITY_LABELS = NSLKDDResources.MINORITY_LABELS
-
-
-def get_label_name(class_name: str) -> str:
-    return NSLKDDResources.get_label_name(class_name)
+    ATTACK_PARAMETERS = {
+        'zoo': {
+            'confidence': 0.0,
+            'targeted': False,
+            'learning_rate': 1e-1,
+            'max_iter': 100,
+            'binary_search_steps': 3,
+            'initial_const': 1e-3,
+            'abort_early': True,
+            'use_resize': False,
+            'use_importance': False,
+            'nb_parallel': 16,
+            'batch_size': 1,
+            'variable_h': 0.02,
+            'verbose': True
+        },
+        'hsja': {
+            "batch_size": 64,
+            "targeted": False,
+            "norm": 2,
+            "max_iter": 10,
+            "max_eval": 600,
+            "init_eval": 20,
+            "init_size": 20,
+            "verbose": True
+        },
+        'jsma': {
+            "theta": 0.02,
+            "gamma": 0.1,
+            "batch_size": 64,
+        },
+        'fgsm': {
+            "eps": 0.1,
+            "batch_size": 64,
+            "eps_step": 0.01,
+            "targeted": False,
+        },
+        'pgd': {
+            "eps": 0.2,
+            "eps_step": 0.01,
+            "batch_size": 64,
+            "targeted": True,
+            "max_iter": 200,
+            "verbose": True
+        },
+        'deepfool': {
+            "max_iter": 100,
+            "batch_size": 64,
+            "nb_grads": 5,
+            "epsilon": 1e-6
+        },
+        'cw': {
+            "confidence": 0.0,
+            "learning_rate": 0.01,
+            "binary_search_steps": 3,
+            "max_iter": 3,
+            "batch_size": 64,
+            "verbose": False,
+            "initial_const": 0.01,
+            "max_halving": 5,
+            "max_doubling": 5
+        },
+    }

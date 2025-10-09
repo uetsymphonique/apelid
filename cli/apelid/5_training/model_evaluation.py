@@ -17,12 +17,7 @@ from preprocessing.cic2018_preprocessor import CIC2018Preprocessor
 from preprocessing.nslkdd_preprocessor import NSLKDDPreprocessor
 from preprocessing.prepare import PrepareData
 
-from training.xgb import XGBModel
-from training.dnn import DNNModel
-from training.catb import CatBoostModel
-from training.bagging import BaggingModel
-from training.histgbm import HistGBMModel
-from training.model import evaluate_classification, confusion_matrix_from_indices, save_confusion_matrix_png
+from helpers.ensemble_helper import load_model, find_model_files, evaluate_single_model
 
 
 logger = get_logger(__name__)
@@ -33,165 +28,10 @@ REGISTRY = {
     'nslkdd': (NSLKDDResources, NSLKDDPreprocessor),
 }
 
-MODEL_CLASSES = {
-    'xgb': XGBModel,
-    'dnn': DNNModel,
-    'catb': CatBoostModel,
-    'bagging': BaggingModel,
-    'histgbm': HistGBMModel,
-}
-
-
-def _load_model(model_path: str, model_type: str, num_class: int = None, input_dim: int = None, device: str = 'auto'):
-    """Load a trained model from file."""
-    if model_type == 'dnn':
-        # Load PyTorch state_dict
-        map_location = 'cpu' if device == 'cpu' else None
-        state_dict = torch.load(model_path, map_location=map_location)
-        model = DNNModel(
-            input_dim=input_dim,
-            num_class=num_class,
-            lr=1e-3,  # Default values, will be overridden by state_dict
-            weight_decay=1e-4,
-            batch_size=512,
-            max_epochs=50,
-            patience=8,
-            device=None if device == 'auto' else device,
-            random_state=42,
-        )
-        model.model.load_state_dict(state_dict)
-        model._is_fitted = True
-        return model
-    else:
-        # Load tree models with pickle
-        with open(model_path, 'rb') as f:
-            model_obj = pickle.load(f)
-        
-        if model_type == 'xgb':
-            model = XGBModel(num_class=num_class, params={}, num_round=100, early_stopping=20, random_state=42)
-            model.model = model_obj
-            # Try enable GPU predictor if requested
-            try:
-                if device in ('cuda', 'GPU', 'auto') and device != 'cpu':
-                    # sklearn API
-                    if hasattr(model.model, 'set_params'):
-                        try:
-                            model.model.set_params(**{'device': 'cuda'})
-                        except Exception:
-                            pass
-                    # native Booster API
-                    if hasattr(model.model, 'set_param'):
-                        try:
-                            model.model.set_param({'device': 'cuda'})
-                        except Exception:
-                            pass
-                    logger.info("[Eval][XGB] Using GPU (device=cuda) when available")
-                else:
-                    logger.info("[Eval][XGB] Using CPU predictor")
-            except Exception:
-                pass
-            model._is_fitted = True
-            return model
-        elif model_type == 'catb':
-            model = CatBoostModel(num_class=num_class, params={}, random_state=42)
-            model.model = model_obj
-            # Try enable GPU if requested
-            try:
-                if device in ('cuda', 'GPU', 'auto') and device != 'cpu':
-                    # CatBoost inference GPU depends on build; we log intent
-                    if hasattr(model.model, 'set_param'):
-                        try:
-                            model.model.set_param({'task_type': 'GPU'})
-                        except Exception:
-                            pass
-                    logger.info("[Eval][CatBoost] GPU requested; proceeding if supported by build")
-                else:
-                    logger.info("[Eval][CatBoost] Using CPU")
-            except Exception:
-                pass
-            model._is_fitted = True
-            return model
-        elif model_type == 'bagging':
-            model = BaggingModel(params={}, random_state=42)
-            model.model = model_obj
-            model._is_fitted = True
-            return model
-        elif model_type == 'histgbm':
-            model = HistGBMModel(num_class=num_class, params={}, random_state=42)
-            model.model = model_obj
-            model._is_fitted = True
-            return model
-        else:
-            raise ValueError(f"Unknown model type: {model_type}")
-
-
-def _find_model_files(models_dir: str, resource_name: str) -> dict:
-    """Find all model files in the models directory."""
-    model_files = {}
-    models_dir = Path(models_dir)
-    
-    if not models_dir.exists():
-        logger.warning(f"Models directory not found: {models_dir}")
-        return model_files
-    
-    for model_type in MODEL_CLASSES.keys():
-        # Look for .pth (DNN) or .pkl (tree models)
-        ext = '.pth' if model_type == 'dnn' else '.pkl'
-        pattern = f"{resource_name}_{model_type}{ext}"
-        model_path = models_dir / pattern
-        
-        if model_path.exists():
-            model_files[model_type] = str(model_path)
-            logger.debug(f"[+] Found {model_type} model: {model_path}")
-        else:
-            logger.warning(f"[!] Model not found: {model_path}")
-    
-    return model_files
-
-
-def _evaluate_single_model(model, model_type: str, X_test: np.ndarray, y_test: np.ndarray, 
-                          class_names: list, output_dir: str, model_name: str, 
-                          save_metrics: bool = False, save_cm: bool = False):
-    """Evaluate a single model and save results."""
-    logger.info(f"=== Evaluating {model_name} ===")
-    
-    # Predict
-    y_pred_idx = model.predict(X_test)
-    
-    # Calculate metrics
-    metrics = evaluate_classification(y_test, y_pred_idx, class_names)
-    
-    # Save metrics if requested
-    if save_metrics:
-        metrics_file = os.path.join(output_dir, model_type, f"{model_name}_metrics.json")
-        os.makedirs(os.path.dirname(metrics_file), exist_ok=True)
-        with open(metrics_file, 'w') as f:
-            json.dump(metrics, f, indent=2)
-        logger.info(f"[+] Metrics saved to: {metrics_file}")
-    else:
-        # Print metrics to debug log if not saving
-        logger.debug(f"{model_name} metrics: {json.dumps(metrics, indent=2)}")
-    
-    # Generate and save confusion matrix if requested
-    if save_cm:
-        cm_mat = confusion_matrix_from_indices(y_test, y_pred_idx, num_classes=len(class_names))
-        cm_file = os.path.join(output_dir, model_type, f"{model_name}_cm.png")
-        os.makedirs(os.path.dirname(cm_file), exist_ok=True)
-        save_confusion_matrix_png(cm_mat, class_names, cm_file)
-        logger.info(f"[+] Confusion matrix saved to: {cm_file}")
-    else:
-        # Print confusion matrix to debug log if not saving
-        cm_mat = confusion_matrix_from_indices(y_test, y_pred_idx, num_classes=len(class_names))
-        logger.debug(f"{model_name} confusion matrix:")
-        logger.debug(f"Labels: {class_names}")
-        logger.debug(f"Matrix:\n{cm_mat}")
-    
-    logger.info(f"[+] {model_name} - Accuracy: {metrics['accuracy']:.4f}, F1-macro: {metrics['f1_macro']:.4f}")
-    
-    return metrics
-
+MODEL_CLASSES = ['xgb', 'dnn', 'catb', 'bagging', 'histgbm']
 
 def _default_inputs(res) -> tuple[str, str]:
+    """Get default train and test data paths."""
     data_dir = res.BALENCED_DATA_FOLDER
     train_path = os.path.join(data_dir, f"{res.resources_name}_merged_train_raw_processed.csv")
     test_path = os.path.join(data_dir, f"{res.resources_name}_test_random_sample_clean_merged.csv")
@@ -212,7 +52,7 @@ def main():
     parser.add_argument('--output-dir', type=str, default=None, help="Output directory for results")
     parser.add_argument('--save-cm', action='store_true', help="Save confusion matrix for each model")
     parser.add_argument('--save-mt', action='store_true', help="Save metrics for each model")
-    parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda', 'auto'])
+    parser.add_argument('--device', type=str, default='auto', choices=['cpu', 'cuda', 'auto'])
     parser.add_argument('--log-level', type=str, default='INFO', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'])
     args = parser.parse_args()
     
@@ -252,7 +92,7 @@ def main():
     
     # Find model files
     if args.mode == 'all':
-        model_files = _find_model_files(args.models_dir, res.resources_name)
+        model_files = find_model_files(args.models_dir, res.resources_name)
         if not model_files:
             raise SystemExit(f"No model files found in {args.models_dir}")
     else:  # mode == 'model'
@@ -280,10 +120,9 @@ def main():
     
     logger.info(f"[+] Evaluating {len(model_files)} models: {list(model_files.keys())}")
     
-    # Prepare test data
-    # Use tree mode for all models (DNN will be handled separately if needed)
+    # Prepare test data using unified PrepareData interface
     X_test, y_test, meta_test = PrepareData.prepare_input_data(
-        df_test, pre, encode_numerical=False, include_label=True, mode='tree'
+        df_test, pre, include_label=True
     )
     class_names = config_class_names
     
@@ -296,22 +135,12 @@ def main():
             # Load model
             logger.debug(f"[+] Loading {model_type} model from {model_path}")
             
-            if model_type == 'dnn':
-                # For DNN, we need to prepare data with scaling
-                X_test_dnn, _, meta_test_dnn = PrepareData.prepare_input_data(
-                    df_test, pre, encode_numerical=True, include_label=True, mode='dnn'
-                )
-                model = _load_model(model_path, model_type, 
-                                  num_class=len(class_names), 
-                                  input_dim=X_test_dnn.shape[1],
-                                  device=args.device)
-                X_eval = X_test_dnn
-            else:
-                model = _load_model(model_path, model_type, num_class=len(class_names), device=args.device)
-                X_eval = X_test
+            model = load_model(model_path, model_type, num_class=len(class_names), device=args.device)
+            
+            X_eval = X_test
             
             # Evaluate
-            metrics = _evaluate_single_model(
+            metrics = evaluate_single_model(
                 model, model_type, X_eval, y_test, class_names, 
                 args.output_dir, f"{res.resources_name}_{model_type}",
                 save_metrics=args.save_mt, save_cm=args.save_cm

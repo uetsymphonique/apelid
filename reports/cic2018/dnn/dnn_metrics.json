@@ -1,8 +1,8 @@
 {
-  "accuracy": 0.9406228248040432,
-  "f1_macro": 0.8762053616082673,
-  "precision_macro": 0.8715141477941576,
-  "recall_macro": 0.8964848154404521,
+  "accuracy": 0.937491443212267,
+  "f1_macro": 0.8740068804295795,
+  "precision_macro": 0.9361486057624312,
+  "recall_macro": 0.8441250729329394,
   "classes": [
     "Benign",
     "Bot",

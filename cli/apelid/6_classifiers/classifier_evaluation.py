@@ -2,7 +2,6 @@ import os
 import sys
 import argparse
 import json
-import pickle
 from pathlib import Path
 from typing import Dict, Tuple
 
@@ -20,13 +19,7 @@ from preprocessing.nslkdd_preprocessor import NSLKDDPreprocessor  # noqa: E402
 from preprocessing.prepare import PrepareData  # noqa: E402
 
 from training.model import evaluate_classification, confusion_matrix_from_indices, save_confusion_matrix_png  # noqa: E402
-
-from art_classifier import (  # noqa: E402
-    DNNClassifier,
-    SkleanWrapper,
-    CatBoostWrapper,
-    XGBWrapper,
-)
+from helpers.wrapping_helper import load_model_as_wrapper
 
 
 logger = get_logger(__name__)
@@ -64,68 +57,6 @@ def _find_model_files(models_dir: str, resource_name: str) -> Dict[str, str]:
     return model_files
 
 
-def _load_model_as_wrapper(model_type: str, model_path: str, *,
-                           num_classes: int, input_dim_tree: int, input_dim_dnn: int,
-                           device: str) -> Tuple[object, int]:
-    """Load saved model and wrap with appropriate ART wrapper. Returns (wrapper, input_dim_used)."""
-    if model_type == 'dnn':
-        wrapper = DNNClassifier.from_checkpoint(
-            ckpt_path=model_path,
-            input_dim=input_dim_dnn,
-            num_classes=num_classes,
-            device=device,
-        )
-        return wrapper, input_dim_dnn
-
-    # Tree-like models use pickle
-    with open(model_path, 'rb') as f:
-        model_obj = pickle.load(f)
-
-    if model_type in ('bagging', 'histgbm'):
-        wrapper = SkleanWrapper(
-            model=model_obj,
-            num_classes=num_classes,
-            input_shape=(input_dim_tree,),
-            device='cpu',
-        )
-        return wrapper, input_dim_tree
-
-    if model_type == 'catb':
-        # Prefer dedicated CatBoost wrapper; falls back to sklearn wrapper if ART CatBoost not available
-        try:
-            wrapper = CatBoostWrapper(
-                model=model_obj,
-                num_classes=num_classes,
-                input_shape=(input_dim_tree,),
-                device=device,
-            )
-        except Exception as e:
-            logger.warning(f"[!] CatBoost ART wrapper unavailable, fallback to SkleanWrapper: {e}")
-            wrapper = SkleanWrapper(
-                model=model_obj,
-                num_classes=num_classes,
-                input_shape=(input_dim_tree,),
-                device='cpu',
-            )
-        return wrapper, input_dim_tree
-
-    if model_type == 'xgb':
-        # ART XGB wrapper expects sklearn.XGBClassifier; our saved model may be a Booster
-        try:
-            wrapper = XGBWrapper(
-                model=model_obj,
-                num_classes=num_classes,
-                input_shape=(input_dim_tree,),
-                device=device,
-            )
-            return wrapper, input_dim_tree
-        except Exception as e:
-            logger.warning(f"[!] XGBoost ART wrapper not compatible with saved model, skipping: {e}")
-            raise
-
-    raise ValueError(f"Unknown model type: {model_type}")
-
-
 def main():
     parser = argparse.ArgumentParser(description="Evaluate trained models via ART classifiers on test data")
     parser.add_argument('--mode', type=str, required=True, choices=['all', 'model'],
@@ -140,7 +71,7 @@ def main():
     parser.add_argument('--output-dir', type=str, default=None, help="Output directory for results")
     parser.add_argument('--save-cm', action='store_true', help="Save confusion matrix for each model")
     parser.add_argument('--save-mt', action='store_true', help="Save metrics for each model")
-    parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda', 'auto'])
+    parser.add_argument('--device', type=str, default='auto', choices=['cpu', 'cuda', 'auto'])
     parser.add_argument('--log-level', type=str, default='INFO', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'])
     args = parser.parse_args()
 
@@ -204,14 +135,9 @@ def main():
 
     logger.info(f"[+] Evaluating {len(model_files)} models with ART: {list(model_files.keys())}")
 
-    # Prepare features
-    # Tree mode
-    X_test_tree, y_test, _ = PrepareData.prepare_input_data(
-        df_test, pre, encode_numerical=False, include_label=True, mode='tree'
-    )
-    # DNN mode
-    X_test_dnn, _, _ = PrepareData.prepare_input_data(
-        df_test, pre, encode_numerical=True, include_label=True, mode='dnn'
+    # Prepare features using unified interface
+    X_test, y_test, meta_test = PrepareData.prepare_input_data(
+        df_test, pre, include_label=True
     )
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -221,15 +147,15 @@ def main():
         try:
             logger.info(f"=== Evaluating {model_type} ===")
             # Load wrapper
-            wrapper, used_dim = _load_model_as_wrapper(
+            wrapper = load_model_as_wrapper(
                 model_type,
                 model_path,
                 num_classes=len(class_names),
-                input_dim_tree=X_test_tree.shape[1],
-                input_dim_dnn=X_test_dnn.shape[1],
+                input_dim=X_test.shape[1],
+                clip_values=meta_test['clip_values'],
                 device=args.device,
             )
-            X_eval = X_test_dnn if model_type == 'dnn' else X_test_tree
+            X_eval = X_test
 
             # Predict via wrapper
             y_pred_idx = wrapper.predict(X_eval)
